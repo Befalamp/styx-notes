@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Styx Notes</title>
+<style>
+  :root {
+    --bg: #FAFAFA;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --ink-soft: #6b6b6b;
+    --line: #e4e4e4;
+    --accent: #2f5d50;
+    --radius: 6px;
+    --label-red: #d9534f;
+    --label-amber: #d9a63f;
+    --label-green: #4f8a5b;
+    --label-blue: #3f6fa6;
+    --label-purple: #7a5c9e;
+    --tint-red: #f7e4e2;
+    --tint-amber: #f7ecd9;
+    --tint-green: #e6efe3;
+    --tint-blue: #e3ebf2;
+    --tint-purple: #ece5f0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  /* ---------- layout shell ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 0.25s ease;
+  }
+
+  .app.sidebar-collapsed {
+    grid-template-columns: 0 1fr;
+  }
+
+  .sidebar {
+    border-right: 1px solid var(--line);
+    padding: 20px 16px;
+    background: var(--surface);
+    overflow: hidden;
+    transition: padding 0.2s ease, opacity 0.15s ease;
+  }
+
+  .app.sidebar-collapsed .sidebar {
+    padding: 20px 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar-toggle-btn {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .sidebar h1 {
+    font-size: 17px;
+    margin: 0 0 16px;
+    font-weight: 600;
+  }
+
+  .sidebar-section {
+    margin-bottom: 22px;
+  }
+
+  .sidebar-section h2 {
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+
+  .sidebar-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  .sidebar-item:hover { background: var(--bg); }
+  .sidebar-item.active { background: #eef3f1; color: var(--accent); font-weight: 600; }
+  .sidebar-item .count { color: var(--ink-soft); font-size: 12px; }
+
+  /* ---------- main pane ---------- */
+  .main {
+    padding: 24px 32px;
+  }
+
+  #viewing-banner {
+    display: none;
+    background: #fdf3d6;
+    color: #4a3a10;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  #viewing-banner a { color: var(--accent); font-weight: 600; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .search {
+    flex: 1;
+    max-width: 420px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 14px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  .layout-toggle {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .layout-toggle button {
+    border: none;
+    background: var(--surface);
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .layout-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary {
+    margin-left: auto;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .btn-mic {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+  }
+
+  /* ---------- notes grid ---------- */
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    align-items: start;
+  }
+
+  .notes.list {
+    grid-template-columns: 1fr;
+    max-width: 640px;
+  }
+
+  .notes.grouped {
+    display: block;
+  }
+
+  .folder-group {
+    margin-bottom: 24px;
+  }
+
+  .folder-group h4 {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 10px;
+    text-transform: capitalize;
+  }
+
+  .folder-group .notes-inner {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .notes.folders {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+  }
+
+  .folder-icon-card {
+    position: relative;
+    text-align: center;
+    cursor: pointer;
+    padding: 6px;
+  }
+
+  .folder-icon-card:hover .folder-shape .body {
+    filter: brightness(0.97);
+  }
+
+  .folder-edit-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .folder-icon-card:hover .folder-edit-btn {
+    opacity: 1;
+  }
+
+  .folder-shape {
+    position: relative;
+    width: 72px;
+    height: 56px;
+    margin: 0 auto 10px;
+  }
+
+  .folder-shape .tab {
+    position: absolute;
+    top: 0;
+    left: 6px;
+    width: 32px;
+    height: 12px;
+    border-radius: 4px 4px 0 0;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.1);
+  }
+
+  .folder-shape .body {
+    position: absolute;
+    top: 8px;
+    left: 0;
+    width: 100%;
+    height: 48px;
+    border-radius: 4px;
+    background-size: cover;
+    background-position: center;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08);
+  }
+
+  .folder-icon-card .name {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .folder-icon-card .count {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .folder-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--accent);
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    border-left: 4px solid transparent;
+    cursor: pointer;
+  }
+
+  .note.label-red { border-left-color: var(--label-red); background: var(--tint-red); }
+  .note.label-amber { border-left-color: var(--label-amber); background: var(--tint-amber); }
+  .note.label-green { border-left-color: var(--label-green); background: var(--tint-green); }
+  .note.label-blue { border-left-color: var(--label-blue); background: var(--tint-blue); }
+  .note.label-purple { border-left-color: var(--label-purple); background: var(--tint-purple); }
+
+  .note h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .note p, .note-body {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+
+  .note-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .tag {
+    font-size: 11px;
+    background: var(--bg);
+    color: var(--ink-soft);
+    padding: 2px 8px;
+    border-radius: 100px;
+  }
+
+  .note-folder {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-left: auto;
+  }
+
+  .empty-state {
+    color: var(--ink-soft);
+    font-size: 14px;
+    padding: 40px 0;
+    text-align: center;
+  }
+
+  .note-dates {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .note-dates .due.overdue {
+    color: var(--label-red);
+    font-weight: 600;
+  }
+
+  .checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 2px 0;
+  }
+
+  .checklist-item input[type="checkbox"] {
+    margin-top: 3px;
+  }
+
+  /* ---------- modal ---------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: var(--radius);
+    width: 480px;
+    max-width: 92vw;
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  .modal input[type="text"],
+  .modal input[type="date"],
+  .modal select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 14px;
+    margin-bottom: 12px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  .modal-title-input {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .field-label {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .toolbar-format {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .toolbar-format button {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    border-radius: var(--radius);
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .note-body-editable {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px;
+    min-height: 100px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .note-body-editable:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .swatches {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+
+  .swatch.selected {
+    border-color: var(--ink);
+  }
+
+  .theme-swatch {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 2px solid var(--line);
+    display: inline-block;
+  }
+  .theme-swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+  .field-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .field-row > div { flex: 1; }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .btn-danger {
+    background: var(--surface);
+    border: 1px solid var(--label-red);
+    color: var(--label-red);
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    cursor: pointer;
+    margin-right: auto;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  .admin-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .admin-row span.email { flex: 1; }
+  .admin-row label { font-size: 12px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .admin-row button { padding: 4px 8px; font-size: 12px; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 720px) {
+    .app {
+      grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 78vw;
+      max-width: 300px;
+      z-index: 210;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: 2px 0 16px rgba(0,0,0,0.2);
+      opacity: 1;
+    }
+
+    .app:not(.sidebar-collapsed) .sidebar {
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 205;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .app:not(.sidebar-collapsed) .sidebar-backdrop {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .main {
+      padding: 14px;
+    }
+
+    .sidebar h1 {
+      font-size: 18px;
+    }
+
+    .toolbar {
+      flex-wrap: wrap;
+      row-gap: 8px;
+    }
+
+    .search {
+      min-width: 0;
+      max-width: none;
+      flex: 1 1 auto;
+    }
+
+    .layout-toggle {
+      flex: 1 1 100%;
+      overflow-x: auto;
+    }
+
+    .layout-toggle button {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 12.5px;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      flex: 1 1 100%;
+      margin-left: 0;
+      padding: 12px 16px;
+    }
+
+    .notes,
+    .notes.folders {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .note {
+      padding: 12px;
+    }
+
+    .modal-overlay {
+      align-items: flex-start;
+      padding: 30px 12px;
+    }
+
+    .modal {
+      width: 100%;
+    }
+
+    .field-row {
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .toolbar-format button {
+      width: 38px;
+      height: 38px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="auth-gate" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:500;">
+  <div style="text-align:center;">
+    <h2 style="margin:0 0 16px;">Styx Notes</h2>
+    <button id="google-signin-btn" class="btn-primary" style="margin:0;">Sign in with Google</button>
+    <p id="auth-error" style="color:var(--label-red);font-size:13px;margin-top:12px;max-width:280px;"></p>
+  </div>
+</div>
+
+<div id="not-authorised-gate" style="position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:500;">
+  <div style="text-align:center;max-width:320px;">
+    <h2 style="margin:0 0 12px;">Not authorised</h2>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;">
+      <span id="not-authorised-email"></span> doesn't have access to this app yet. Ask an admin to add you.
+    </p>
+    <button class="btn-secondary" id="not-authorised-signout">Sign out</button>
+  </div>
+</div>
+
+<div class="app" style="display:none;">
+
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <aside class="sidebar">
+    <h1>Styx Notes</h1>
+    <button class="btn-secondary" id="theme-btn" style="width:100%;margin-bottom:8px;">🎨 Theme</button>
+    <button class="btn-secondary" id="admin-btn" style="width:100%;margin-bottom:8px;display:none;">⚙ Manage people</button>
+    <button class="btn-secondary" id="sign-out-btn" style="width:100%;margin-bottom:16px;">Sign out</button>
+
+    <div class="sidebar-section">
+      <h2>Folders</h2>
+      <div class="sidebar-item active" data-folder="all">All notes <span class="count" id="count-all"></span></div>
+      <div class="sidebar-item" data-folder="unfiled">Unfiled <span class="count" id="count-unfiled"></span></div>
+      <div id="folder-list"></div>
+      <div class="sidebar-item" id="new-folder-btn" style="color:var(--accent);font-weight:600;">+ New folder</div>
+    </div>
+
+    <div class="sidebar-section">
+      <h2>Tags</h2>
+      <div id="tag-list"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="viewing-banner"></div>
+    <div class="toolbar">
+      <button class="sidebar-toggle-btn" id="sidebar-toggle" title="Show/hide sidebar">☰</button>
+      <input class="search" id="search" type="text" placeholder="Search notes">
+      <button class="btn-mic" id="mic-btn" title="Dictate a note">🎤</button>
+      <div class="layout-toggle">
+        <button data-layout="grid" class="active">Grid</button>
+        <button data-layout="list">List</button>
+        <button data-layout="grouped">Grouped</button>
+        <button data-layout="folders">Folders</button>
+      </div>
+      <button class="btn-primary" id="new-note-btn">New note</button>
+    </div>
+
+    <div class="notes" id="notes-container"></div>
+  </main>
+
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <span class="field-label">Title</span>
+    <input type="text" id="modal-title" class="modal-title-input" placeholder="Note title">
+
+    <span class="field-label">Note</span>
+    <div class="toolbar-format">
+      <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+      <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+      <button type="button" data-cmd="insertUnorderedList" title="Bullet list">•</button>
+      <button type="button" id="checklist-btn" title="Checklist">☑</button>
+    </div>
+    <div class="note-body-editable" id="modal-body" contenteditable="true"></div>
+
+    <div class="field-row">
+      <div>
+        <span class="field-label">Folder</span>
+        <select id="modal-folder"></select>
+      </div>
+      <div>
+        <span class="field-label">Due date (optional)</span>
+        <input type="date" id="modal-due">
+      </div>
+    </div>
+
+    <span class="field-label">Tags (comma separated)</span>
+    <input type="text" id="modal-tags" placeholder="e.g. camp, kit">
+
+    <span class="field-label">Colour label</span>
+    <div class="swatches" id="modal-swatches">
+      <div class="swatch" style="background:none;border:1px solid var(--line)" data-label=""></div>
+      <div class="swatch" style="background:var(--label-red)" data-label="red"></div>
+      <div class="swatch" style="background:var(--label-amber)" data-label="amber"></div>
+      <div class="swatch" style="background:var(--label-green)" data-label="green"></div>
+      <div class="swatch" style="background:var(--label-blue)" data-label="blue"></div>
+      <div class="swatch" style="background:var(--label-purple)" data-label="purple"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-danger" id="modal-delete" style="display:none;">Delete</button>
+      <button class="btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn-primary" id="modal-save" style="margin-left:0">Save note</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="folder-modal-overlay">
+  <div class="modal">
+    <span class="field-label">Folder name</span>
+    <input type="text" id="folder-name-input" placeholder="e.g. holidays">
+
+    <span class="field-label">Tab colour</span>
+    <div class="swatches" id="folder-swatches"></div>
+
+    <span class="field-label">Folder image (optional)</span>
+    <input type="file" id="folder-image-input" accept="image/*">
+    <div id="folder-image-preview" style="margin:10px 0;"></div>
+    <button class="btn-secondary" id="folder-image-remove" type="button">Remove image</button>
+
+    <div class="modal-actions">
+      <button class="btn-danger" id="folder-delete-btn" style="display:none;">Delete folder</button>
+      <button class="btn-secondary" id="folder-modal-cancel">Cancel</button>
+      <button class="btn-primary" id="folder-modal-save" style="margin-left:0">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="theme-modal-overlay">
+  <div class="modal">
+    <span class="field-label">Theme</span>
+    <div id="theme-swatches" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;"></div>
+    <span class="field-label">Custom colour</span>
+    <input type="color" id="theme-custom-input" style="width:60px;height:34px;padding:0;border:1px solid var(--line);border-radius:4px;cursor:pointer;">
+    <div class="modal-actions">
+      <button class="btn-secondary" id="theme-modal-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="admin-modal-overlay">
+  <div class="modal">
+    <span class="field-label">People with access</span>
+    <div id="admin-people-list" style="margin-bottom:16px;"></div>
+
+    <span class="field-label">Add someone by email</span>
+    <input type="text" id="admin-add-email" placeholder="name@gmail.com">
+    <button class="btn-secondary" id="admin-add-btn" type="button" style="margin-bottom:16px;">Add person</button>
+
+    <span class="field-label">View as (troubleshooting)</span>
+    <select id="admin-view-as"></select>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="admin-modal-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // ============================================================
+  // FIREBASE + ACCESS SETUP
+  //
+  // 1. Firestore Database → create it.
+  // 2. Authentication → Sign-in method → enable "Google".
+  // 3. Authentication → Settings → Authorized domains → add whatever
+  //    domain this ends up hosted on (GitHub Pages / Firebase Hosting
+  //    domain) or the Google sign-in popup will refuse to work.
+  // 4. Firestore Database → Rules → paste this, then Publish:
+  //
+  //    rules_version = '2';
+  //    service cloud.firestore {
+  //      match /databases/{database}/documents {
+  //        function isAllowed() {
+  //          return request.auth != null &&
+  //            exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email));
+  //        }
+  //        function isAdmin() {
+  //          return isAllowed() &&
+  //            get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email)).data.isAdmin == true;
+  //        }
+  //        match /allowedUsers/{email} {
+  //          allow get: if isAdmin() || (isAllowed() && email == request.auth.token.email);
+  //          allow list: if isAdmin();
+  //          allow write: if isAdmin();
+  //        }
+  //        match /folders/{folderId} {
+  //          allow create: if isAllowed() && (request.resource.data.owner == request.auth.token.email || isAdmin());
+  //          allow read, update, delete: if isAllowed() &&
+  //            (resource.data.owner == request.auth.token.email || isAdmin());
+  //        }
+  //        match /notes/{noteId} {
+  //          allow create: if isAllowed() && (request.resource.data.owner == request.auth.token.email || isAdmin());
+  //          allow read, update, delete: if isAllowed() &&
+  //            (resource.data.owner == request.auth.token.email || isAdmin());
+  //        }
+  //      }
+  //    }
+  //
+  // 5. ONE MANUAL STEP (bootstrap problem — the app can't add the very
+  //    first admin, because the rules won't let anyone in until they're
+  //    already on the list): in the Firestore console, Data tab, create
+  //    a collection called "allowedUsers", with one document:
+  //      Document ID: your exact Google account email
+  //      Fields: email (string, same email), isAdmin (boolean, true),
+  //              addedAt (string, today's date)
+  //    After that, everyone else (hubby, Fern...) gets added from inside
+  //    the app via the "Manage people" button — no more console visits.
+  //
+  // 6. Project settings → General → "Your apps" → add a Web app →
+  //    copy the config object into firebaseConfig below.
+  // ============================================================
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs,
+    setDoc, onSnapshot, query, where, orderBy
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import {
+    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+  const firebaseConfig = {
+  apiKey: "AIzaSyCCsWnm73zcug2g16NZ2NskVF9TRXBNW9o",
+  authDomain: "styx-notes.firebaseapp.com",
+  projectId: "styx-notes",
+  storageBucket: "styx-notes.firebasestorage.app",
+  messagingSenderId: "1003972186989",
+  appId: "1:1003972186989:web:49f4fdcc01aef834aec064"
+};
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+  const auth = getAuth(fbApp);
+  const provider = new GoogleAuthProvider();
+
+  // ---------- live data ----------
+  let notes = [];
+  let folders = [];
+  let currentUser = null;   // { email, isAdmin }
+  let activeOwner = null;   // whose data we're currently viewing (self, unless admin picked "view as")
+  let unsubNotes = null;
+  let unsubFolders = null;
+  let editingNoteId = null;
+  let editingFolderDoc = null;
+
+  let currentFolder = "all"; // "all" | "unfiled" | a folder id
+  let currentTag = null;
+  let currentLayout = "grid";
+  let viewingInsideFolder = false;
+
+  const folderColorPalette = ["#4f8a5b", "#3f6fa6", "#7a5c9e", "#d9a63f", "#d9534f", "#2f5d50", "#6b6b6b"];
+
+  // ============================================================
+  // AUTH
+  // ============================================================
+  document.getElementById("google-signin-btn").addEventListener("click", () => {
+    document.getElementById("auth-error").textContent = "";
+    signInWithPopup(auth, provider).catch(err => {
+      document.getElementById("auth-error").textContent = err.message;
+    });
+  });
+  document.getElementById("sign-out-btn").addEventListener("click", () => signOut(auth));
+  document.getElementById("not-authorised-signout").addEventListener("click", () => signOut(auth));
+
+  onAuthStateChanged(auth, async (user) => {
+    const authGate = document.getElementById("auth-gate");
+    const notAuthGate = document.getElementById("not-authorised-gate");
+    const appEl = document.querySelector(".app");
+
+    if (!user) {
+      authGate.style.display = "flex";
+      notAuthGate.style.display = "none";
+      appEl.style.display = "none";
+      return;
+    }
+
+    const email = user.email;
+    let userSnap;
+    try {
+      userSnap = await getDoc(doc(db, "allowedUsers", email));
+    } catch (err) {
+      userSnap = null;
+    }
+
+    if (!userSnap || !userSnap.exists()) {
+      authGate.style.display = "none";
+      appEl.style.display = "none";
+      notAuthGate.style.display = "flex";
+      document.getElementById("not-authorised-email").textContent = email;
+      return;
+    }
+
+    currentUser = { email, isAdmin: !!userSnap.data().isAdmin };
+    activeOwner = email;
+    authGate.style.display = "none";
+    notAuthGate.style.display = "none";
+    appEl.style.display = "grid";
+    document.getElementById("admin-btn").style.display = currentUser.isAdmin ? "block" : "none";
+    updateViewingBanner();
+    subscribeToData(activeOwner);
+  });
+
+  function subscribeToData(ownerEmail) {
+    if (unsubNotes) unsubNotes();
+    if (unsubFolders) unsubFolders();
+
+    const notesQuery = query(collection(db, "notes"), where("owner", "==", ownerEmail), orderBy("created", "desc"));
+    unsubNotes = onSnapshot(notesQuery, (snapshot) => {
+      notes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderFolderSidebar();
+      renderTags();
+      renderCounts();
+      renderNotes();
+    }, (err) => {
+      console.error("Notes listener failed:", err);
+      document.getElementById("notes-container").innerHTML =
+        `<div class="empty-state">Couldn't load notes — check the Firebase config and rules.</div>`;
+    });
+
+    const foldersQuery = query(collection(db, "folders"), where("owner", "==", ownerEmail), orderBy("name"));
+    unsubFolders = onSnapshot(foldersQuery, (snapshot) => {
+      folders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderFolderSidebar();
+      renderNotes();
+    }, (err) => {
+      console.error("Folders listener failed:", err);
+    });
+  }
+
+  function updateViewingBanner() {
+    const banner = document.getElementById("viewing-banner");
+    if (!currentUser) return;
+    if (activeOwner !== currentUser.email) {
+      banner.style.display = "block";
+      banner.innerHTML = `Viewing <b>${activeOwner}</b>'s notes (admin) — <a href="#" id="return-to-mine">Return to my notes</a>`;
+      document.getElementById("return-to-mine").addEventListener("click", (e) => {
+        e.preventDefault();
+        activeOwner = currentUser.email;
+        updateViewingBanner();
+        subscribeToData(activeOwner);
+      });
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  // ============================================================
+  // RENDERING — TAGS / COUNTS / SIDEBAR
+  // ============================================================
+  function allTags() {
+    const set = new Set();
+    notes.forEach(n => (n.tags || []).forEach(t => set.add(t)));
+    return [...set];
+  }
+
+  function renderTags() {
+    const list = document.getElementById("tag-list");
+    list.innerHTML = allTags().map(t =>
+      `<div class="sidebar-item${t === currentTag ? " active" : ""}" data-tag="${t}">#${t}</div>`
+    ).join("");
+
+    list.querySelectorAll(".sidebar-item[data-tag]").forEach(el => {
+      el.addEventListener("click", () => {
+        currentTag = currentTag === el.dataset.tag ? null : el.dataset.tag;
+        renderTags();
+        renderNotes();
+        if (window.innerWidth <= 720) {
+          document.querySelector(".app").classList.add("sidebar-collapsed");
+        }
+      });
+    });
+  }
+
+  function renderCounts() {
+    document.getElementById("count-all").textContent = notes.length;
+    document.getElementById("count-unfiled").textContent = notes.filter(n => !n.folderId).length;
+  }
+
+  function renderFolderSidebar() {
+    const list = document.getElementById("folder-list");
+    list.innerHTML = folders.map(f => `
+      <div class="sidebar-item${currentFolder === f.id ? " active" : ""}" data-folder="${f.id}">
+        ${f.name} <span class="count">${notes.filter(n => n.folderId === f.id).length}</span>
+      </div>
+    `).join("");
+    list.querySelectorAll(".sidebar-item[data-folder]").forEach(el => {
+      el.addEventListener("click", () => sidebarFolderClick(el.dataset.folder));
+    });
+    document.querySelector('.sidebar-item[data-folder="all"]').classList.toggle("active", currentFolder === "all");
+    document.querySelector('.sidebar-item[data-folder="unfiled"]').classList.toggle("active", currentFolder === "unfiled");
+  }
+
+  function sidebarFolderClick(folderKey) {
+    currentFolder = folderKey;
+    viewingInsideFolder = false;
+    renderFolderSidebar();
+    renderNotes();
+    if (window.innerWidth <= 720) {
+      document.querySelector(".app").classList.add("sidebar-collapsed");
+    }
+  }
+
+  document.querySelector('.sidebar-item[data-folder="all"]').addEventListener("click", () => sidebarFolderClick("all"));
+  document.querySelector('.sidebar-item[data-folder="unfiled"]').addEventListener("click", () => sidebarFolderClick("unfiled"));
+
+  document.getElementById("new-folder-btn").addEventListener("click", () => openFolderEditor(null));
+
+  // ============================================================
+  // RENDERING — NOTES
+  // ============================================================
+  function formatDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+
+  function isOverdue(iso) {
+    if (!iso) return false;
+    return new Date(iso + "T00:00:00") < new Date(new Date().toDateString());
+  }
+
+  function folderNameFor(folderId) {
+    if (!folderId) return "Unfiled";
+    const f = folders.find(x => x.id === folderId);
+    return f ? f.name : "Unfiled";
+  }
+
+  function noteCardHtml(n) {
+    return `
+      <div class="note${n.label ? " label-" + n.label : ""}" data-id="${n.id}">
+        <h3>${n.title}</h3>
+        <div class="note-dates">
+          <span>Created ${formatDate(n.created)}</span>
+          ${n.due ? `<span class="due${isOverdue(n.due) ? " overdue" : ""}">Due ${formatDate(n.due)}</span>` : ""}
+        </div>
+        <div class="note-body">${n.body}</div>
+        <div class="note-meta">
+          ${(n.tags || []).map(t => `<span class="tag">#${t}</span>`).join("")}
+          <span class="note-folder">${folderNameFor(n.folderId)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderNotes() {
+    const container = document.getElementById("notes-container");
+
+    if (currentLayout === "folders" && !viewingInsideFolder) {
+      container.className = "notes folders";
+      if (folders.length === 0) {
+        container.innerHTML = `<div class="empty-state">No folders yet — use "+ New folder" in the sidebar.</div>`;
+        return;
+      }
+      const folderBodyColor = "#f6d873";
+      container.innerHTML = folders.map(f => {
+        const bodyStyle = f.image
+          ? `background-image:url('${f.image}'); background-color:${folderBodyColor};`
+          : `background-color:${folderBodyColor};`;
+        return `
+          <div class="folder-icon-card" data-folder="${f.id}">
+            <button class="folder-edit-btn" data-folder-id="${f.id}" title="Customise folder">✎</button>
+            <div class="folder-shape">
+              <div class="tab" style="background:${f.color}"></div>
+              <div class="body" style="${bodyStyle}"></div>
+            </div>
+            <div class="name">${f.name}</div>
+            <div class="count">${notes.filter(n => n.folderId === f.id).length} notes</div>
+          </div>
+        `;
+      }).join("");
+
+      container.querySelectorAll(".folder-icon-card").forEach(card => {
+        card.addEventListener("click", (e) => {
+          if (e.target.closest(".folder-edit-btn")) return;
+          currentFolder = card.dataset.folder;
+          viewingInsideFolder = true;
+          renderNotes();
+        });
+      });
+      container.querySelectorAll(".folder-edit-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const folderDoc = folders.find(f => f.id === btn.dataset.folderId);
+          if (folderDoc) openFolderEditor(folderDoc);
+        });
+      });
+      return;
+    }
+
+    let filtered = notes;
+    if (currentFolder === "unfiled") filtered = notes.filter(n => !n.folderId);
+    else if (currentFolder !== "all") filtered = notes.filter(n => n.folderId === currentFolder);
+
+    if (currentTag) {
+      filtered = filtered.filter(n => (n.tags || []).includes(currentTag));
+    }
+
+    if (currentLayout === "folders" && viewingInsideFolder) {
+      container.className = "notes-detail";
+      const backLink = `<div class="folder-back" id="folder-back">← All folders</div>`;
+      if (filtered.length === 0) {
+        container.innerHTML = backLink + `<div class="empty-state">Nothing filed here yet.</div>`;
+      } else {
+        container.innerHTML = backLink + `<div class="notes">${filtered.map(noteCardHtml).join("")}</div>`;
+      }
+      document.getElementById("folder-back").addEventListener("click", () => {
+        viewingInsideFolder = false;
+        currentFolder = "all";
+        renderNotes();
+      });
+      return;
+    }
+
+    if (filtered.length === 0) {
+      container.className = "notes " + currentLayout;
+      container.innerHTML = `<div class="empty-state">Nothing filed here yet.</div>`;
+      return;
+    }
+
+    if (currentLayout === "grouped") {
+      container.className = "notes grouped";
+      const groupIds = [...new Set(filtered.map(n => n.folderId || "unfiled"))];
+      container.innerHTML = groupIds.map(gid => {
+        const label = gid === "unfiled" ? "Unfiled" : folderNameFor(gid);
+        const groupNotes = filtered.filter(n => (n.folderId || "unfiled") === gid);
+        return `
+          <div class="folder-group">
+            <h4>${label}</h4>
+            <div class="notes-inner">${groupNotes.map(noteCardHtml).join("")}</div>
+          </div>
+        `;
+      }).join("");
+      return;
+    }
+
+    container.className = "notes " + currentLayout;
+    container.innerHTML = filtered.map(noteCardHtml).join("");
+  }
+
+  document.getElementById("notes-container").addEventListener("click", (e) => {
+    if (e.target.closest(".folder-icon-card") || e.target.closest(".folder-back")) return;
+    if (e.target.closest("input[type='checkbox']")) return; // checklist ticks aren't persisted yet
+    const card = e.target.closest(".note[data-id]");
+    if (!card) return;
+    const note = notes.find(n => n.id === card.dataset.id);
+    if (note) openModal(note);
+  });
+
+  document.querySelectorAll(".layout-toggle button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentLayout = btn.dataset.layout;
+      localStorage.setItem("lastLayout", currentLayout);
+      viewingInsideFolder = false;
+      if (currentLayout !== "folders") currentFolder = "all";
+      renderNotes();
+    });
+  });
+
+  // ============================================================
+  // NOTE MODAL
+  // ============================================================
+  const overlay = document.getElementById("modal-overlay");
+  const modalBody = document.getElementById("modal-body");
+  let selectedLabel = "";
+
+  function renderFolderSelectOptions(selectedId) {
+    const select = document.getElementById("modal-folder");
+    const opts = [`<option value="">Unfiled</option>`]
+      .concat(folders.map(f => `<option value="${f.id}">${f.name}</option>`));
+    select.innerHTML = opts.join("");
+    select.value = selectedId || "";
+  }
+
+  function openModal(note) {
+    editingNoteId = note ? note.id : null;
+    document.getElementById("modal-title").value = note ? note.title : "";
+    modalBody.innerHTML = note ? note.body : "";
+    const defaultFolder = (currentFolder !== "all" && currentFolder !== "unfiled") ? currentFolder : "";
+    renderFolderSelectOptions(note ? (note.folderId || "") : defaultFolder);
+    document.getElementById("modal-due").value = note ? (note.due || "") : "";
+    document.getElementById("modal-tags").value = note ? (note.tags || []).join(", ") : "";
+    selectedLabel = note ? (note.label || "") : "";
+    document.querySelectorAll("#modal-swatches .swatch").forEach(s =>
+      s.classList.toggle("selected", s.dataset.label === selectedLabel)
+    );
+    document.getElementById("modal-delete").style.display = note ? "inline-block" : "none";
+    document.getElementById("modal-save").textContent = note ? "Save changes" : "Save note";
+    overlay.classList.add("open");
+    document.getElementById("modal-title").focus();
+  }
+
+  function closeModal() {
+    overlay.classList.remove("open");
+    editingNoteId = null;
+  }
+
+  document.getElementById("new-note-btn").addEventListener("click", () => openModal(null));
+  document.getElementById("modal-cancel").addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+
+  document.querySelectorAll(".toolbar-format button[data-cmd]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      modalBody.focus();
+      document.execCommand(btn.dataset.cmd, false, null);
+    });
+  });
+
+  document.getElementById("checklist-btn").addEventListener("click", () => {
+    modalBody.focus();
+    document.execCommand("insertHTML", false, '<div class="checklist-item"><input type="checkbox">New item</div>');
+  });
+
+  document.getElementById("modal-swatches").addEventListener("click", (e) => {
+    const swatch = e.target.closest(".swatch");
+    if (!swatch) return;
+    document.querySelectorAll("#modal-swatches .swatch").forEach(s => s.classList.remove("selected"));
+    swatch.classList.add("selected");
+    selectedLabel = swatch.dataset.label;
+  });
+
+  document.getElementById("modal-save").addEventListener("click", async () => {
+    const title = document.getElementById("modal-title").value.trim();
+    if (!title) { alert("Give the note a title first."); return; }
+    const tags = document.getElementById("modal-tags").value.split(",").map(t => t.trim()).filter(Boolean);
+    const folderId = document.getElementById("modal-folder").value || null;
+
+    const payload = {
+      title,
+      body: modalBody.innerHTML,
+      folderId,
+      tags,
+      label: selectedLabel,
+      due: document.getElementById("modal-due").value,
+    };
+
+    try {
+      if (editingNoteId) {
+        await updateDoc(doc(db, "notes", editingNoteId), payload);
+      } else {
+        await addDoc(collection(db, "notes"), {
+          ...payload,
+          owner: activeOwner,
+          created: new Date().toISOString().slice(0, 10),
+        });
+      }
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't save that note — " + err.message);
+    }
+  });
+
+  document.getElementById("modal-delete").addEventListener("click", async () => {
+    if (!editingNoteId) return;
+    if (!confirm("Delete this note?")) return;
+    try {
+      await deleteDoc(doc(db, "notes", editingNoteId));
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't delete that note — " + err.message);
+    }
+  });
+
+  // ============================================================
+  // VOICE CAPTURE (Web Speech API)
+  // ============================================================
+  const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = document.getElementById("mic-btn");
+
+  if (!SpeechRecognitionImpl) {
+    micBtn.title = "Voice capture not supported in this browser";
+    micBtn.addEventListener("click", () => {
+      alert("This browser doesn't support in-page voice capture (Chrome/Edge do). Use the Android Auto → Keep pipeline for hands-free capture instead.");
+    });
+  } else {
+    const recognition = new SpeechRecognitionImpl();
+    recognition.lang = "en-GB";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    let listening = false;
+
+    micBtn.addEventListener("click", () => {
+      if (listening) return;
+      listening = true;
+      micBtn.style.background = "var(--label-red)";
+      try { recognition.start(); } catch (err) { listening = false; micBtn.style.background = ""; }
+    });
+
+    recognition.addEventListener("result", (e) => {
+      const transcript = e.results[0][0].transcript.trim();
+      if (!transcript) return;
+      openModal(null);
+      document.getElementById("modal-title").value = transcript.split(" ").slice(0, 8).join(" ");
+      modalBody.innerHTML = `<p>${transcript}</p>`;
+    });
+
+    recognition.addEventListener("end", () => { listening = false; micBtn.style.background = ""; });
+    recognition.addEventListener("error", (e) => {
+      listening = false;
+      micBtn.style.background = "";
+      if (e.error !== "no-speech") alert("Voice capture error: " + e.error);
+    });
+  }
+
+  // ============================================================
+  // FOLDER MODAL (create / rename / recolour / delete)
+  // ============================================================
+  const folderOverlay = document.getElementById("folder-modal-overlay");
+  const folderImageInput = document.getElementById("folder-image-input");
+
+  function openFolderEditor(folderDoc) {
+    editingFolderDoc = folderDoc;
+    document.getElementById("folder-name-input").value = folderDoc ? folderDoc.name : "";
+    folderImageInput.value = "";
+    delete folderImageInput.dataset.pendingImage;
+    renderFolderSwatches(folderDoc ? folderDoc.color : folderColorPalette[0]);
+    renderFolderImagePreview(folderDoc ? folderDoc.image : null);
+    document.getElementById("folder-delete-btn").style.display = folderDoc ? "inline-block" : "none";
+    folderOverlay.classList.add("open");
+  }
+
+  function renderFolderSwatches(selectedColor) {
+    const container = document.getElementById("folder-swatches");
+    container.innerHTML = folderColorPalette.map(c =>
+      `<div class="swatch${c === selectedColor ? " selected" : ""}" style="background:${c}" data-color="${c}"></div>`
+    ).join("");
+    container.querySelectorAll(".swatch").forEach(s => {
+      s.addEventListener("click", () => {
+        container.querySelectorAll(".swatch").forEach(x => x.classList.remove("selected"));
+        s.classList.add("selected");
+      });
+    });
+  }
+
+  function renderFolderImagePreview(image) {
+    const preview = document.getElementById("folder-image-preview");
+    preview.innerHTML = image
+      ? `<img src="${image}" style="width:60px;height:45px;object-fit:cover;border-radius:4px;">`
+      : `<span class="field-label" style="margin:0">No image set — solid colour will be used</span>`;
+  }
+
+  folderImageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      folderImageInput.dataset.pendingImage = reader.result;
+      renderFolderImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("folder-image-remove").addEventListener("click", () => {
+    folderImageInput.value = "";
+    folderImageInput.dataset.pendingImage = "REMOVE";
+    renderFolderImagePreview(null);
+  });
+
+  document.getElementById("folder-modal-cancel").addEventListener("click", () => folderOverlay.classList.remove("open"));
+  folderOverlay.addEventListener("click", (e) => { if (e.target === folderOverlay) folderOverlay.classList.remove("open"); });
+
+  document.getElementById("folder-modal-save").addEventListener("click", async () => {
+    const name = document.getElementById("folder-name-input").value.trim();
+    if (!name) { alert("Give the folder a name."); return; }
+    const dup = folders.some(f => f.name.toLowerCase() === name.toLowerCase() && (!editingFolderDoc || f.id !== editingFolderDoc.id));
+    if (dup) { alert("A folder with that name already exists."); return; }
+
+    const selectedSwatch = document.querySelector("#folder-swatches .swatch.selected");
+    const color = selectedSwatch ? selectedSwatch.dataset.color : folderColorPalette[0];
+    const pending = folderImageInput.dataset.pendingImage;
+    let image;
+    if (pending === "REMOVE") image = null;
+    else if (pending) image = pending;
+    else image = editingFolderDoc ? (editingFolderDoc.image || null) : null;
+
+    try {
+      if (editingFolderDoc) {
+        // Renaming is safe — notes link by folderId, not by name.
+        await updateDoc(doc(db, "folders", editingFolderDoc.id), { name, color, image });
+      } else {
+        await addDoc(collection(db, "folders"), { name, color, image, owner: activeOwner });
+      }
+      folderOverlay.classList.remove("open");
+    } catch (err) {
+      alert("Couldn't save that folder — " + err.message);
+    }
+  });
+
+  document.getElementById("folder-delete-btn").addEventListener("click", async () => {
+    if (!editingFolderDoc) return;
+    const notesInFolder = notes.filter(n => n.folderId === editingFolderDoc.id);
+
+    if (notesInFolder.length === 0) {
+      if (!confirm(`Delete the "${editingFolderDoc.name}" folder?`)) return;
+    } else {
+      const deleteNotesToo = confirm(
+        `"${editingFolderDoc.name}" has ${notesInFolder.length} note(s) in it.\n\n` +
+        `Press OK to delete the folder AND those notes.\n` +
+        `Press Cancel to delete just the folder and leave the notes unfiled.`
+      );
+      try {
+        if (deleteNotesToo) {
+          await Promise.all(notesInFolder.map(n => deleteDoc(doc(db, "notes", n.id))));
+        } else {
+          await Promise.all(notesInFolder.map(n => updateDoc(doc(db, "notes", n.id), { folderId: null })));
+        }
+      } catch (err) {
+        alert("Couldn't update the notes in that folder — " + err.message);
+        return;
+      }
+    }
+
+    try {
+      await deleteDoc(doc(db, "folders", editingFolderDoc.id));
+      folderOverlay.classList.remove("open");
+    } catch (err) {
+      alert("Couldn't delete that folder — " + err.message);
+    }
+  });
+
+  // ============================================================
+  // THEME (full palette per background, presets + custom picker)
+  // ============================================================
+  const THEME_PALETTES = {
+    "#FFFFFF": { name: "Pure White",      surface: "#FFFFFF", ink: "#1a1a1a", inkSoft: "#6b6b6b", line: "#e4e4e4", accent: "#2f5d50", tints: "light" },
+    "#FAFAFA": { name: "Off-White",       surface: "#FFFFFF", ink: "#1a1a1a", inkSoft: "#6b6b6b", line: "#e4e4e4", accent: "#2f5d50", tints: "light" },
+    "#F5F5F5": { name: "Soft Gray",       surface: "#FFFFFF", ink: "#1a1a1a", inkSoft: "#666666", line: "#dcdcdc", accent: "#2f5d50", tints: "light" },
+    "#F4ECD8": { name: "Warm Sepia",      surface: "#FBF6EA", ink: "#3a2f22", inkSoft: "#7a6a52", line: "#e2d5b8", accent: "#6b4a2f", tints: "light" },
+    "#000000": { name: "OLED Black",      surface: "#121212", ink: "#f2f2f2", inkSoft: "#a0a0a0", line: "#2a2a2a", accent: "#5fb894", tints: "dark" },
+    "#121212": { name: "Material Dark",   surface: "#1c1c1c", ink: "#f0f0f0", inkSoft: "#a3a3a3", line: "#2e2e2e", accent: "#5fb894", tints: "dark" },
+    "#1F1F1F": { name: "Dark Elevation",  surface: "#292929", ink: "#f0f0f0", inkSoft: "#aaaaaa", line: "#383838", accent: "#5fb894", tints: "dark" },
+  };
+  const TINTS = {
+    light: { red: "#f7e4e2", amber: "#f7ecd9", green: "#e6efe3", blue: "#e3ebf2", purple: "#ece5f0" },
+    dark:  { red: "#3a2320", amber: "#3a301c", green: "#203324", blue: "#1f2c38", purple: "#2c2333" },
+  };
+
+  function hexToRgb(hex) {
+    const h = hex.replace("#", "");
+    return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  }
+  function relativeLuminance(hex) {
+    const [r, g, b] = hexToRgb(hex).map(v => v / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function hexToHsl(hex) {
+    let [r, g, b] = hexToRgb(hex).map(v => v / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) { h = 0; s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4;
+      }
+      h /= 6;
+    }
+    return [h * 360, s * 100, l * 100];
+  }
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r, g, b;
+    if (h < 60) { r = c; g = x; b = 0; } else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; } else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+    const toHex = v => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+    return "#" + toHex(r) + toHex(g) + toHex(b);
+  }
+  function shiftLightness(hex, deltaPercent) {
+    const [h, s, l] = hexToHsl(hex);
+    return hslToHex(h, s, Math.min(100, Math.max(0, l + deltaPercent)));
+  }
+
+  function applyTheme(bgHex) {
+    const key = bgHex.toUpperCase();
+    let pal = THEME_PALETTES[key];
+    if (!pal) {
+      const isDark = relativeLuminance(key) < 0.4;
+      pal = isDark
+        ? { surface: shiftLightness(key, 6), ink: "#f0f0f0", inkSoft: "#a8a8a8", line: shiftLightness(key, 12), accent: "#5fb894", tints: "dark" }
+        : { surface: "#ffffff", ink: "#1a1a1a", inkSoft: "#6b6b6b", line: shiftLightness(key, -8), accent: "#2f5d50", tints: "light" };
+    }
+    const tints = TINTS[pal.tints];
+    const root = document.documentElement.style;
+    root.setProperty("--bg", bgHex);
+    root.setProperty("--surface", pal.surface);
+    root.setProperty("--ink", pal.ink);
+    root.setProperty("--ink-soft", pal.inkSoft);
+    root.setProperty("--line", pal.line);
+    root.setProperty("--accent", pal.accent);
+    root.setProperty("--tint-red", tints.red);
+    root.setProperty("--tint-amber", tints.amber);
+    root.setProperty("--tint-green", tints.green);
+    root.setProperty("--tint-blue", tints.blue);
+    root.setProperty("--tint-purple", tints.purple);
+    localStorage.setItem("themeBg", bgHex);
+    renderThemeSwatches(bgHex);
+  }
+
+  function renderThemeSwatches(selectedHex) {
+    const container = document.getElementById("theme-swatches");
+    container.innerHTML = Object.entries(THEME_PALETTES).map(([hex, pal]) =>
+      `<span class="theme-swatch${hex === selectedHex.toUpperCase() ? " selected" : ""}" style="background:${hex};" data-hex="${hex}" title="${pal.name}"></span>`
+    ).join("");
+    container.querySelectorAll(".theme-swatch").forEach(sw => {
+      sw.addEventListener("click", () => applyTheme(sw.dataset.hex));
+    });
+  }
+
+  document.getElementById("theme-custom-input").addEventListener("input", (e) => applyTheme(e.target.value));
+  document.getElementById("theme-btn").addEventListener("click", () => {
+    document.getElementById("theme-modal-overlay").classList.add("open");
+  });
+  document.getElementById("theme-modal-close").addEventListener("click", () => {
+    document.getElementById("theme-modal-overlay").classList.remove("open");
+  });
+
+  // Apply saved theme (or default) on load — theme is a per-device
+  // display preference, kept in localStorage rather than synced.
+  applyTheme(localStorage.getItem("themeBg") || "#FAFAFA");
+
+  // ============================================================
+  // ADMIN — manage allowedUsers + "view as"
+  // ============================================================
+  async function loadAdminPeopleList() {
+    let snap;
+    try {
+      snap = await getDocs(collection(db, "allowedUsers"));
+    } catch (err) {
+      alert("Couldn't load the people list — " + err.message);
+      return;
+    }
+    const people = snap.docs.map(d => d.data());
+
+    const listEl = document.getElementById("admin-people-list");
+    listEl.innerHTML = people.map(u => `
+      <div class="admin-row">
+        <span class="email">${u.email}${u.email === currentUser.email ? " (you)" : ""}</span>
+        <label><input type="checkbox" class="admin-toggle" data-email="${u.email}" ${u.isAdmin ? "checked" : ""}> admin</label>
+        <button class="btn-secondary admin-remove" data-email="${u.email}">Remove</button>
+      </div>
+    `).join("");
+
+    listEl.querySelectorAll(".admin-toggle").forEach(cb => {
+      cb.addEventListener("change", async () => {
+        try {
+          await updateDoc(doc(db, "allowedUsers", cb.dataset.email), { isAdmin: cb.checked });
+        } catch (err) { alert("Couldn't update that — " + err.message); }
+      });
+    });
+    listEl.querySelectorAll(".admin-remove").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (btn.dataset.email === currentUser.email) { alert("You can't remove yourself."); return; }
+        if (!confirm(`Remove access for ${btn.dataset.email}?`)) return;
+        try {
+          await deleteDoc(doc(db, "allowedUsers", btn.dataset.email));
+          loadAdminPeopleList();
+        } catch (err) { alert("Couldn't remove that — " + err.message); }
+      });
+    });
+
+    const viewAsSelect = document.getElementById("admin-view-as");
+    viewAsSelect.innerHTML = people.map(u =>
+      `<option value="${u.email}"${u.email === activeOwner ? " selected" : ""}>${u.email}${u.email === currentUser.email ? " (me)" : ""}</option>`
+    ).join("");
+  }
+
+  document.getElementById("admin-btn").addEventListener("click", () => {
+    loadAdminPeopleList();
+    document.getElementById("admin-modal-overlay").classList.add("open");
+  });
+  document.getElementById("admin-modal-close").addEventListener("click", () => {
+    document.getElementById("admin-modal-overlay").classList.remove("open");
+  });
+
+  document.getElementById("admin-add-btn").addEventListener("click", async () => {
+    const email = document.getElementById("admin-add-email").value.trim().toLowerCase();
+    if (!email) return;
+    try {
+      await setDoc(doc(db, "allowedUsers", email), { email, isAdmin: false, addedAt: new Date().toISOString() });
+      // Seed one example folder so a new person has something to look at
+      // and delete, rather than opening onto a totally empty app.
+      await addDoc(collection(db, "folders"), { name: "example folder", color: folderColorPalette[0], image: null, owner: email });
+      document.getElementById("admin-add-email").value = "";
+      loadAdminPeopleList();
+    } catch (err) {
+      alert("Couldn't add that person — " + err.message);
+    }
+  });
+
+  document.getElementById("admin-view-as").addEventListener("change", (e) => {
+    activeOwner = e.target.value;
+    updateViewingBanner();
+    subscribeToData(activeOwner);
+  });
+
+  // ============================================================
+  // SIDEBAR DRAWER / MOBILE
+  // ============================================================
+  document.getElementById("sidebar-toggle").addEventListener("click", () => {
+    const collapsed = document.querySelector(".app").classList.toggle("sidebar-collapsed");
+    localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+  });
+
+  document.getElementById("sidebar-backdrop").addEventListener("click", () => {
+    document.querySelector(".app").classList.add("sidebar-collapsed");
+    localStorage.setItem("sidebarCollapsed", "1");
+  });
+
+  const storedCollapsed = localStorage.getItem("sidebarCollapsed");
+  if (storedCollapsed === "1" || (storedCollapsed === null && window.innerWidth <= 720)) {
+    document.querySelector(".app").classList.add("sidebar-collapsed");
+  }
+
+  const savedLayout = localStorage.getItem("lastLayout");
+  if (savedLayout) {
+    currentLayout = savedLayout;
+    document.querySelectorAll(".layout-toggle button").forEach(b => {
+      b.classList.toggle("active", b.dataset.layout === savedLayout);
+    });
+  }
+
+  // Initial paint (empty until Firestore listeners above deliver data)
+  renderTags();
+  renderCounts();
+  renderNotes();
+</script>
+
+</body>
+</html>
