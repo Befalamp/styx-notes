@@ -1043,15 +1043,20 @@
     document.querySelector('.sidebar-item[data-folder="unfiled"]').classList.toggle("active", currentFolder === "unfiled");
   }
 
-  function sidebarFolderClick(folderKey) {
-    currentFolder = folderKey;
-    viewingInsideFolder = false;
-    renderFolderSidebar();
-    renderNotes();
-    if (window.innerWidth <= 720) {
-      document.querySelector(".app").classList.add("sidebar-collapsed");
-    }
+  ffunction sidebarFolderClick(folderKey) {
+  currentFolder = folderKey;
+  viewingInsideFolder = false;
+  if ((folderKey === "all" || folderKey === "unfiled") && currentLayout === "folders") {
+    currentLayout = "grid";
+    document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === "grid"));
+    localStorage.setItem("lastLayout", "grid");
   }
+  renderFolderSidebar();
+  renderNotes();
+  if (window.innerWidth <= 720) {
+    document.querySelector(".app").classList.add("sidebar-collapsed");
+  }
+}
 
   document.querySelector('.sidebar-item[data-folder="all"]').addEventListener("click", () => sidebarFolderClick("all"));
   document.querySelector('.sidebar-item[data-folder="unfiled"]').addEventListener("click", () => sidebarFolderClick("unfiled"));
