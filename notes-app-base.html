@@ -1043,7 +1043,7 @@
     document.querySelector('.sidebar-item[data-folder="unfiled"]').classList.toggle("active", currentFolder === "unfiled");
   }
 
-  ffunction sidebarFolderClick(folderKey) {
+  function sidebarFolderClick(folderKey) {
   currentFolder = folderKey;
   viewingInsideFolder = false;
   if ((folderKey === "all" || folderKey === "unfiled") && currentLayout === "folders") {
