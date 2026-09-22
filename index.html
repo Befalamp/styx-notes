@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Styx Notes</title>
+
+<!-- PWA: manifest, theme colour, icons -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f5d50">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Styx">
+
 <style>
   :root {
     --bg: #FAFAFA;
@@ -1691,6 +1701,17 @@
   renderTags();
   renderCounts();
   renderNotes();
+</script>
+
+<!-- PWA: register the service worker (plain script, outside the module above) -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.error('Service worker registration failed:', err);
+      });
+    });
+  }
 </script>
 
 </body>
