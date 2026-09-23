@@ -1918,10 +1918,17 @@
       modalBody.focus();
       const cmd = btn.dataset.cmd;
       if (cmd === "heading") {
-        document.execCommand("formatBlock", false, "<h3>");
+        document.execCommand("insertHTML", false, "<h3>Heading</h3>");
       } else if (cmd === "link") {
         const url = window.prompt("Link URL:");
-        if (url) document.execCommand("createLink", false, url);
+        if (!url) return;
+        const sel = window.getSelection();
+        const hasSelection = sel && !sel.isCollapsed && modalBody.contains(sel.anchorNode);
+        if (hasSelection) {
+          document.execCommand("createLink", false, url);
+        } else {
+          document.execCommand("insertHTML", false, `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a>`);
+        }
       } else {
         document.execCommand(cmd, false, null);
       }

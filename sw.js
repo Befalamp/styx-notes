@@ -5,7 +5,7 @@
 //
 // Bump this whenever the caching strategy itself changes — it's what
 // forces browsers to install a fresh service worker and clear old caches.
-const CACHE_VERSION = 'styx-notes-v11';
+const CACHE_VERSION = 'styx-notes-v12';
 
 const APP_SHELL = [
   './',
