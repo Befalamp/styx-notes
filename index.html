@@ -376,6 +376,15 @@
     gap: 4px;
   }
 
+  .note-folder-top {
+    font-size: 11px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
   .empty-state {
     color: var(--ink-soft);
     font-size: 14px;
@@ -1212,10 +1221,16 @@
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" style="flex-shrink:0;"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
   }
 
+  function folderPathLabel(folderId) {
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return "Unfiled";
+    return folderAncestors(folderId).map(f => f.name).concat([folder.name]).join(" › ");
+  }
+
   function noteCardHtml(n) {
     let labelClass = "";
     let styleAttr = "";
-    let folderIconHtml = "";
+    let topLineHtml = "";
     let folderColorForIcon = null;
     if (n.folderId) {
       const folder = folders.find(f => f.id === n.folderId);
@@ -1227,10 +1242,11 @@
       styleAttr = ` style="border-left-color:${folderColorForIcon}; background:${tintFromColor(folderColorForIcon)};"`;
     }
     if (folderColorForIcon) {
-      folderIconHtml = folderIconSvg(folderColorForIcon, 12);
+      topLineHtml = `<div class="note-folder-top">${folderIconSvg(folderColorForIcon, 12)}<span>${folderPathLabel(n.folderId)}</span></div>`;
     }
     return `
       <div class="note${labelClass}" data-id="${n.id}"${styleAttr}>
+        ${topLineHtml}
         <h3>${n.title}</h3>
         <div class="note-dates">
           <span>Created ${formatDate(n.created)}</span>
@@ -1239,7 +1255,6 @@
         <div class="note-body">${n.body}</div>
         <div class="note-meta">
           ${(n.tags || []).map(t => `<span class="tag">#${t}</span>`).join("")}
-          <span class="note-folder">${folderIconHtml}${folderNameFor(n.folderId)}</span>
         </div>
       </div>
     `;
