@@ -531,6 +531,20 @@
     font-weight: 600;
   }
 
+  .dialog-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+
+  .dialog-message {
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    white-space: pre-line;
+    margin: 0 0 18px;
+  }
+
   .field-label {
     font-size: 11px;
     color: var(--ink-soft);
@@ -1097,6 +1111,49 @@
   }
 
   // ============================================================
+  // DIALOGS — replaces native confirm()/alert() with an in-app
+  // modal so there's no browser-chrome "JavaScript from..." line.
+  // ============================================================
+  function showDialog({ title = "", message = "", buttons }) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay open";
+      overlay.innerHTML = `
+        <div class="modal" style="width:380px;">
+          ${title ? `<p class="dialog-title">${title}</p>` : ""}
+          <p class="dialog-message">${message}</p>
+          <div class="modal-actions" id="dialog-actions"></div>
+        </div>
+      `;
+      const actions = overlay.querySelector("#dialog-actions");
+      buttons.forEach((btn) => {
+        const el = document.createElement("button");
+        el.textContent = btn.label;
+        el.className = btn.variant === "danger" ? "btn-danger" : btn.variant === "secondary" ? "btn-secondary" : "btn-primary";
+        el.style.marginLeft = "0";
+        el.style.marginRight = "0";
+        el.addEventListener("click", () => {
+          overlay.remove();
+          resolve(btn.value);
+        });
+        actions.appendChild(el);
+      });
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function showAlert(message, title = "") {
+    return showDialog({ title, message, buttons: [{ label: "OK", value: true, variant: "primary" }] });
+  }
+
+  function showConfirm(message, title = "") {
+    return showDialog({ title, message, buttons: [
+      { label: "Cancel", value: false, variant: "secondary" },
+      { label: "OK", value: true, variant: "primary" },
+    ] });
+  }
+
+  // ============================================================
   // AUTH
   // ============================================================
   document.getElementById("google-signin-btn").addEventListener("click", () => {
@@ -1585,7 +1642,7 @@
 
   document.getElementById("modal-save").addEventListener("click", async () => {
     const title = document.getElementById("modal-title").value.trim();
-    if (!title) { alert("Give the note a title first."); return; }
+    if (!title) { showAlert("Give the note a title first."); return; }
     const tags = document.getElementById("modal-tags").value.split(",").map(t => t.trim()).filter(Boolean);
     const folderId = document.getElementById("modal-folder").value || null;
 
@@ -1611,19 +1668,19 @@
       closeModal();
     } catch (err) {
       console.error(err);
-      alert("Couldn't save that note — " + err.message);
+      showAlert("Couldn't save that note — " + err.message);
     }
   });
 
   document.getElementById("modal-delete").addEventListener("click", async () => {
     if (!editingNoteId) return;
-    if (!confirm("Delete this note?")) return;
+    if (!(await showConfirm("Delete this note?"))) return;
     try {
       await deleteDoc(doc(db, "notes", editingNoteId));
       closeModal();
     } catch (err) {
       console.error(err);
-      alert("Couldn't delete that note — " + err.message);
+      showAlert("Couldn't delete that note — " + err.message);
     }
   });
 
@@ -1636,7 +1693,7 @@
   if (!SpeechRecognitionImpl) {
     micBtn.title = "Voice capture not supported in this browser";
     micBtn.addEventListener("click", () => {
-      alert("This browser doesn't support in-page voice capture (Chrome/Edge do). Use the Android Auto → Keep pipeline for hands-free capture instead.");
+      showAlert("This browser doesn't support in-page voice capture (Chrome/Edge do). Use the Android Auto → Keep pipeline for hands-free capture instead.");
     });
   } else {
     const recognition = new SpeechRecognitionImpl();
@@ -1664,7 +1721,7 @@
     recognition.addEventListener("error", (e) => {
       listening = false;
       micBtn.style.background = "";
-      if (e.error !== "no-speech") alert("Voice capture error: " + e.error);
+      if (e.error !== "no-speech") showAlert("Voice capture error: " + e.error);
     });
   }
 
@@ -1750,7 +1807,7 @@
 
   document.getElementById("folder-modal-save").addEventListener("click", async () => {
     const name = document.getElementById("folder-name-input").value.trim();
-    if (!name) { alert("Give the folder a name."); return; }
+    if (!name) { showAlert("Give the folder a name."); return; }
     const parentId = document.getElementById("folder-parent-select").value || null;
 
     // Name only needs to be unique among siblings under the same parent.
@@ -1759,7 +1816,7 @@
       folderParentId(f) === parentId &&
       (!editingFolderDoc || f.id !== editingFolderDoc.id)
     );
-    if (dup) { alert("A folder with that name already exists in this location."); return; }
+    if (dup) { showAlert("A folder with that name already exists in this location."); return; }
 
     let color = null;
     if (!parentId) {
@@ -1783,7 +1840,7 @@
       }
       folderOverlay.classList.remove("open");
     } catch (err) {
-      alert("Couldn't save that folder — " + err.message);
+      showAlert("Couldn't save that folder — " + err.message);
     }
   });
 
@@ -1795,22 +1852,29 @@
 
     if (notesAffected.length === 0) {
       const subMsg = subCount > 0 ? ` and its ${subCount} subfolder${subCount === 1 ? "" : "s"}` : "";
-      if (!confirm(`Delete "${editingFolderDoc.name}"${subMsg}?`)) return;
+      if (!(await showConfirm(`Delete "${editingFolderDoc.name}"${subMsg}?`))) return;
     } else {
       const subMsg = subCount > 0 ? ` (including ${subCount} subfolder${subCount === 1 ? "" : "s"})` : "";
-      const deleteNotesToo = confirm(
-        `"${editingFolderDoc.name}"${subMsg} has ${notesAffected.length} note(s) in it.\n\n` +
-        `Press OK to delete the folder${subCount > 0 ? " tree" : ""} AND those notes.\n` +
-        `Press Cancel to delete just the folder${subCount > 0 ? " tree" : ""} and leave the notes unfiled.`
-      );
+      const choice = await showDialog({
+        title: "Delete folder",
+        message:
+          `"${editingFolderDoc.name}"${subMsg} has ${notesAffected.length} note(s) in it.\n\n` +
+          `What should happen to those notes?`,
+        buttons: [
+          { label: "Cancel", value: "cancel", variant: "secondary" },
+          { label: "Unfile & delete folder", value: "unfile", variant: "secondary" },
+          { label: "Delete notes too", value: "delete", variant: "danger" },
+        ],
+      });
+      if (choice === "cancel") return;
       try {
-        if (deleteNotesToo) {
+        if (choice === "delete") {
           await Promise.all(notesAffected.map(n => deleteDoc(doc(db, "notes", n.id))));
         } else {
           await Promise.all(notesAffected.map(n => updateDoc(doc(db, "notes", n.id), { folderId: null })));
         }
       } catch (err) {
-        alert("Couldn't update the notes in that folder — " + err.message);
+        showAlert("Couldn't update the notes in that folder — " + err.message);
         return;
       }
     }
@@ -1820,7 +1884,7 @@
       folderPath = folderPath.filter(id => !idsToDelete.includes(id));
       folderOverlay.classList.remove("open");
     } catch (err) {
-      alert("Couldn't delete that folder — " + err.message);
+      showAlert("Couldn't delete that folder — " + err.message);
     }
   });
 
@@ -1939,7 +2003,7 @@
     try {
       snap = await getDocs(collection(db, "allowedUsers"));
     } catch (err) {
-      alert("Couldn't load the people list — " + err.message);
+      showAlert("Couldn't load the people list — " + err.message);
       return;
     }
     const people = snap.docs.map(d => d.data());
@@ -1957,17 +2021,17 @@
       cb.addEventListener("change", async () => {
         try {
           await updateDoc(doc(db, "allowedUsers", cb.dataset.email), { isAdmin: cb.checked });
-        } catch (err) { alert("Couldn't update that — " + err.message); }
+        } catch (err) { showAlert("Couldn't update that — " + err.message); }
       });
     });
     listEl.querySelectorAll(".admin-remove").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (btn.dataset.email === currentUser.email) { alert("You can't remove yourself."); return; }
-        if (!confirm(`Remove access for ${btn.dataset.email}?`)) return;
+        if (btn.dataset.email === currentUser.email) { showAlert("You can't remove yourself."); return; }
+        if (!(await showConfirm(`Remove access for ${btn.dataset.email}?`))) return;
         try {
           await deleteDoc(doc(db, "allowedUsers", btn.dataset.email));
           loadAdminPeopleList();
-        } catch (err) { alert("Couldn't remove that — " + err.message); }
+        } catch (err) { showAlert("Couldn't remove that — " + err.message); }
       });
     });
 
@@ -1996,7 +2060,7 @@
       document.getElementById("admin-add-email").value = "";
       loadAdminPeopleList();
     } catch (err) {
-      alert("Couldn't add that person — " + err.message);
+      showAlert("Couldn't add that person — " + err.message);
     }
   });
 
