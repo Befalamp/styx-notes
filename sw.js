@@ -1,6 +1,6 @@
 // Bump this on every deploy that changes index.html/manifest/icons —
 // it's what forces old cached copies to be replaced.
-const CACHE_VERSION = 'styx-notes-v1';
+const CACHE_VERSION = 'styx-notes-v2';
 
 const APP_SHELL = [
   './',
