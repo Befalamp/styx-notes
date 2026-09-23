@@ -303,13 +303,21 @@
   }
 
   .folder-back {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     font-size: 13px;
+    color: var(--ink-soft);
+    margin-bottom: 16px;
+  }
+
+  .folder-back .crumb-link {
     color: var(--accent);
     cursor: pointer;
-    margin-bottom: 16px;
+  }
+  .folder-back .crumb-link:hover {
+    text-decoration: underline;
   }
 
   .note {
@@ -780,8 +788,16 @@
     <span class="field-label">Folder name</span>
     <input type="text" id="folder-name-input" placeholder="e.g. holidays">
 
-    <span class="field-label">Tab colour</span>
-    <div class="swatches" id="folder-swatches"></div>
+    <span class="field-label">Parent folder</span>
+    <select id="folder-parent-select" style="margin-bottom:14px;"></select>
+
+    <div id="folder-colour-section">
+      <span class="field-label">Tab colour</span>
+      <div class="swatches" id="folder-swatches"></div>
+    </div>
+    <p id="folder-colour-note" class="field-label" style="display:none;margin-bottom:14px;">
+      Colour is set automatically as a shade of the parent folder's colour.
+    </p>
 
     <span class="field-label">Folder image (optional)</span>
     <input type="file" id="folder-image-input" accept="image/*">
@@ -915,9 +931,85 @@
   let currentFolder = "all"; // "all" | "unfiled" | a folder id
   let currentTag = null;
   let currentLayout = "grid";
-  let viewingInsideFolder = false;
+  let folderPath = []; // stack of folder ids drilled into, in the "folders" layout — [] means at the root
 
   const folderColorPalette = ["#4f8a5b", "#3f6fa6", "#7a5c9e", "#d9a63f", "#d9534f", "#2f5d50", "#6b6b6b"];
+
+  // ---------- folder hierarchy helpers ----------
+  function folderParentId(f) { return f.parentId || null; }
+
+  function folderChildren(parentId) {
+    return folders.filter(f => folderParentId(f) === (parentId || null));
+  }
+
+  function folderDescendantIds(folderId) {
+    const ids = [];
+    const walk = (pid) => {
+      folderChildren(pid).forEach(child => { ids.push(child.id); walk(child.id); });
+    };
+    walk(folderId);
+    return ids;
+  }
+
+  function folderDepth(folder) {
+    let depth = 0;
+    let current = folder;
+    while (current && folderParentId(current)) {
+      current = folders.find(f => f.id === folderParentId(current));
+      if (!current) break;
+      depth++;
+    }
+    return depth;
+  }
+
+  function folderRootColor(folder) {
+    let current = folder;
+    while (current && folderParentId(current)) {
+      const parent = folders.find(f => f.id === folderParentId(current));
+      if (!parent) break;
+      current = parent;
+    }
+    return (current && current.color) ? current.color : folderColorPalette[0];
+  }
+
+  // Only top-level folders store a real colour choice. Every level below
+  // is an automatic shade of the root ancestor's colour — lighter per
+  // level, capped so it never washes out to white.
+  function resolveFolderColor(folder) {
+    if (!folder) return folderColorPalette[0];
+    const depth = folderDepth(folder);
+    if (depth === 0) return folder.color || folderColorPalette[0];
+    const root = folderRootColor(folder);
+    const delta = Math.min(depth * 15, 45);
+    return shiftLightness(root, delta);
+  }
+
+  function folderAncestors(folderId) {
+    // root-first list of ancestor folders (not including folderId itself)
+    const chain = [];
+    let current = folders.find(f => f.id === folderId);
+    while (current && folderParentId(current)) {
+      const parent = folders.find(f => f.id === folderParentId(current));
+      if (!parent) break;
+      chain.unshift(parent);
+      current = parent;
+    }
+    return chain;
+  }
+
+  // Flat, depth-ordered list of every folder for pickers — parents
+  // always appear before their children, siblings alphabetical.
+  function folderTreeFlat() {
+    const out = [];
+    const walk = (parentId, depth) => {
+      folderChildren(parentId)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(f => { out.push({ folder: f, depth }); walk(f.id, depth + 1); });
+    };
+    walk(null, 0);
+    return out;
+  }
 
   // ============================================================
   // AUTH
@@ -1047,8 +1139,8 @@
 
   function renderFolderSidebar() {
     const list = document.getElementById("folder-list");
-    list.innerHTML = folders.map(f => `
-      <div class="sidebar-item${currentFolder === f.id ? " active" : ""}" data-folder="${f.id}">
+    list.innerHTML = folderTreeFlat().map(({ folder: f, depth }) => `
+      <div class="sidebar-item${currentFolder === f.id ? " active" : ""}" data-folder="${f.id}" style="padding-left:${8 + depth * 16}px;">
         ${f.name} <span class="count">${notes.filter(n => n.folderId === f.id).length}</span>
       </div>
     `).join("");
@@ -1061,7 +1153,7 @@
 
   function sidebarFolderClick(folderKey) {
   currentFolder = folderKey;
-  viewingInsideFolder = false;
+  folderPath = [];
   if ((folderKey === "all" || folderKey === "unfiled") && currentLayout === "folders") {
     currentLayout = "grid";
     document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === "grid"));
@@ -1077,7 +1169,10 @@
   document.querySelector('.sidebar-item[data-folder="all"]').addEventListener("click", () => sidebarFolderClick("all"));
   document.querySelector('.sidebar-item[data-folder="unfiled"]').addEventListener("click", () => sidebarFolderClick("unfiled"));
 
-  document.getElementById("new-folder-btn").addEventListener("click", () => openFolderEditor(null));
+  document.getElementById("new-folder-btn").addEventListener("click", () => {
+    const defaultParent = (currentFolder !== "all" && currentFolder !== "unfiled") ? currentFolder : null;
+    openFolderEditor(null, defaultParent);
+  });
 
   // ============================================================
   // RENDERING — NOTES
@@ -1117,8 +1212,9 @@
       labelClass = " label-" + n.label;
     } else if (n.folderId) {
       const folder = folders.find(f => f.id === n.folderId);
-      if (folder && folder.color) {
-        styleAttr = ` style="border-left-color:${folder.color}; background:${tintFromColor(folder.color)};"`;
+      if (folder) {
+        const resolved = resolveFolderColor(folder);
+        styleAttr = ` style="border-left-color:${resolved}; background:${tintFromColor(resolved)};"`;
       }
     }
     return `
@@ -1137,47 +1233,106 @@
     `;
   }
 
+  function folderIconCardHtml(f) {
+    const folderBodyColor = "#f6d873";
+    const bodyStyle = f.image
+      ? `background-image:url('${f.image}'); background-color:${folderBodyColor};`
+      : `background-color:${folderBodyColor};`;
+    const directNoteCount = notes.filter(n => n.folderId === f.id).length;
+    const subCount = folderChildren(f.id).length;
+    const countLabel = subCount > 0
+      ? `${directNoteCount} notes, ${subCount} subfolder${subCount === 1 ? "" : "s"}`
+      : `${directNoteCount} notes`;
+    return `
+      <div class="folder-icon-card" data-folder="${f.id}">
+        <button class="folder-edit-btn" data-folder-id="${f.id}" title="Customise folder">✎</button>
+        <div class="folder-shape">
+          <div class="tab" style="background:${resolveFolderColor(f)}"></div>
+          <div class="body" style="${bodyStyle}"></div>
+        </div>
+        <div class="name">${f.name}</div>
+        <div class="count">${countLabel}</div>
+      </div>
+    `;
+  }
+
+  function bindFolderIconCards(container) {
+    container.querySelectorAll(".folder-icon-card").forEach(card => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".folder-edit-btn")) return;
+        folderPath.push(card.dataset.folder);
+        renderNotes();
+      });
+    });
+    container.querySelectorAll(".folder-edit-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const folderDoc = folders.find(f => f.id === btn.dataset.folderId);
+        if (folderDoc) openFolderEditor(folderDoc);
+      });
+    });
+  }
+
   function renderNotes() {
     const container = document.getElementById("notes-container");
 
-    if (currentLayout === "folders" && !viewingInsideFolder) {
-      container.className = "notes folders";
-      if (folders.length === 0) {
-        container.innerHTML = `<div class="empty-state">No folders yet — use "+ New folder" in the sidebar.</div>`;
+    if (currentLayout === "folders") {
+      container.className = "notes-detail";
+
+      if (folderPath.length === 0) {
+        // Root of folder browsing — just the top-level folders.
+        const topLevel = folderChildren(null);
+        if (topLevel.length === 0) {
+          container.innerHTML = `<div class="empty-state">No folders yet — use "+ New folder" in the sidebar.</div>`;
+          return;
+        }
+        container.innerHTML = `<div class="notes folders">${topLevel.map(folderIconCardHtml).join("")}</div>`;
+        bindFolderIconCards(container);
         return;
       }
-      const folderBodyColor = "#f6d873";
-      container.innerHTML = folders.map(f => {
-        const bodyStyle = f.image
-          ? `background-image:url('${f.image}'); background-color:${folderBodyColor};`
-          : `background-color:${folderBodyColor};`;
-        return `
-          <div class="folder-icon-card" data-folder="${f.id}">
-            <button class="folder-edit-btn" data-folder-id="${f.id}" title="Customise folder">✎</button>
-            <div class="folder-shape">
-              <div class="tab" style="background:${f.color}"></div>
-              <div class="body" style="${bodyStyle}"></div>
-            </div>
-            <div class="name">${f.name}</div>
-            <div class="count">${notes.filter(n => n.folderId === f.id).length} notes</div>
-          </div>
-        `;
-      }).join("");
 
-      container.querySelectorAll(".folder-icon-card").forEach(card => {
-        card.addEventListener("click", (e) => {
-          if (e.target.closest(".folder-edit-btn")) return;
-          currentFolder = card.dataset.folder;
-          viewingInsideFolder = true;
+      // Drilled into a folder — breadcrumb, its subfolders, and its own direct notes.
+      const activeId = folderPath[folderPath.length - 1];
+      const activeFolder = folders.find(f => f.id === activeId);
+      if (!activeFolder) { folderPath = []; renderNotes(); return; }
+
+      const crumbs = [{ id: null, name: "All folders" }]
+        .concat(folderAncestors(activeId).map(f => ({ id: f.id, name: f.name })))
+        .concat([{ id: activeId, name: activeFolder.name }]);
+      const breadcrumbHtml = `<div class="folder-back" id="folder-breadcrumb">` +
+        crumbs.map((c, i) => {
+          const isLast = i === crumbs.length - 1;
+          return `<span class="crumb${isLast ? "" : " crumb-link"}" data-depth="${i}">${c.name}</span>`;
+        }).join(" › ") +
+        ` <span class="crumb-link" id="new-subfolder-link" style="margin-left:8px;">+ New subfolder</span>` +
+        `</div>`;
+
+      const subfolders = folderChildren(activeId);
+      const directNotes = notes.filter(n => n.folderId === activeId);
+
+      let bodyHtml = "";
+      if (subfolders.length > 0) {
+        bodyHtml += `<div class="notes folders" style="margin-bottom:20px;">${subfolders.map(folderIconCardHtml).join("")}</div>`;
+      }
+      if (directNotes.length > 0) {
+        bodyHtml += `<div class="notes">${directNotes.map(noteCardHtml).join("")}</div>`;
+      }
+      if (subfolders.length === 0 && directNotes.length === 0) {
+        bodyHtml = `<div class="empty-state">Nothing filed here yet.</div>`;
+      }
+
+      container.innerHTML = breadcrumbHtml + bodyHtml;
+      bindFolderIconCards(container);
+      container.querySelectorAll(".crumb-link[data-depth]").forEach(el => {
+        el.addEventListener("click", () => {
+          const depth = parseInt(el.dataset.depth, 10);
+          // depth 0 = "All folders" (empty path); depth i = crumbs[i] which is folderPath[i-1]
+          folderPath = folderPath.slice(0, depth);
           renderNotes();
         });
       });
-      container.querySelectorAll(".folder-edit-btn").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const folderDoc = folders.find(f => f.id === btn.dataset.folderId);
-          if (folderDoc) openFolderEditor(folderDoc);
-        });
+      document.getElementById("new-subfolder-link").addEventListener("click", () => {
+        openFolderEditor(null, activeId);
       });
       return;
     }
@@ -1188,22 +1343,6 @@
 
     if (currentTag) {
       filtered = filtered.filter(n => (n.tags || []).includes(currentTag));
-    }
-
-    if (currentLayout === "folders" && viewingInsideFolder) {
-      container.className = "notes-detail";
-      const backLink = `<div class="folder-back" id="folder-back">← All folders</div>`;
-      if (filtered.length === 0) {
-        container.innerHTML = backLink + `<div class="empty-state">Nothing filed here yet.</div>`;
-      } else {
-        container.innerHTML = backLink + `<div class="notes">${filtered.map(noteCardHtml).join("")}</div>`;
-      }
-      document.getElementById("folder-back").addEventListener("click", () => {
-        viewingInsideFolder = false;
-        currentFolder = "all";
-        renderNotes();
-      });
-      return;
     }
 
     if (filtered.length === 0) {
@@ -1247,7 +1386,7 @@
       btn.classList.add("active");
       currentLayout = btn.dataset.layout;
       localStorage.setItem("lastLayout", currentLayout);
-      viewingInsideFolder = false;
+      folderPath = [];
       if (currentLayout !== "folders") currentFolder = "all";
       renderNotes();
     });
@@ -1263,7 +1402,9 @@
   function renderFolderSelectOptions(selectedId) {
     const select = document.getElementById("modal-folder");
     const opts = [`<option value="">Unfiled</option>`]
-      .concat(folders.map(f => `<option value="${f.id}">${f.name}</option>`));
+      .concat(folderTreeFlat().map(({ folder: f, depth }) =>
+        `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${f.name}</option>`
+      ));
     select.innerHTML = opts.join("");
     select.value = selectedId || "";
   }
@@ -1406,16 +1547,39 @@
   const folderOverlay = document.getElementById("folder-modal-overlay");
   const folderImageInput = document.getElementById("folder-image-input");
 
-  function openFolderEditor(folderDoc) {
+  function openFolderEditor(folderDoc, defaultParentId) {
     editingFolderDoc = folderDoc;
     document.getElementById("folder-name-input").value = folderDoc ? folderDoc.name : "";
     folderImageInput.value = "";
     delete folderImageInput.dataset.pendingImage;
-    renderFolderSwatches(folderDoc ? folderDoc.color : folderColorPalette[0]);
+
+    // Parent picker — exclude the folder itself and its own descendants,
+    // so it can't be nested inside its own subtree.
+    const excludeIds = folderDoc ? [folderDoc.id, ...folderDescendantIds(folderDoc.id)] : [];
+    const parentSelect = document.getElementById("folder-parent-select");
+    const currentParent = folderDoc ? folderParentId(folderDoc) : (defaultParentId || null);
+    const opts = [`<option value="">No parent (top-level)</option>`].concat(
+      folderTreeFlat()
+        .filter(({ folder: f }) => !excludeIds.includes(f.id))
+        .map(({ folder: f, depth }) => `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${f.name}</option>`)
+    );
+    parentSelect.innerHTML = opts.join("");
+    parentSelect.value = currentParent || "";
+
+    renderFolderSwatches(folderDoc && !folderParentId(folderDoc) ? folderDoc.color : folderColorPalette[0]);
+    toggleFolderColourSection();
     renderFolderImagePreview(folderDoc ? folderDoc.image : null);
     document.getElementById("folder-delete-btn").style.display = folderDoc ? "inline-block" : "none";
     folderOverlay.classList.add("open");
   }
+
+  function toggleFolderColourSection() {
+    const hasParent = !!document.getElementById("folder-parent-select").value;
+    document.getElementById("folder-colour-section").style.display = hasParent ? "none" : "block";
+    document.getElementById("folder-colour-note").style.display = hasParent ? "block" : "none";
+  }
+
+  document.getElementById("folder-parent-select").addEventListener("change", toggleFolderColourSection);
 
   function renderFolderSwatches(selectedColor) {
     const container = document.getElementById("folder-swatches");
@@ -1460,11 +1624,23 @@
   document.getElementById("folder-modal-save").addEventListener("click", async () => {
     const name = document.getElementById("folder-name-input").value.trim();
     if (!name) { alert("Give the folder a name."); return; }
-    const dup = folders.some(f => f.name.toLowerCase() === name.toLowerCase() && (!editingFolderDoc || f.id !== editingFolderDoc.id));
-    if (dup) { alert("A folder with that name already exists."); return; }
+    const parentId = document.getElementById("folder-parent-select").value || null;
 
-    const selectedSwatch = document.querySelector("#folder-swatches .swatch.selected");
-    const color = selectedSwatch ? selectedSwatch.dataset.color : folderColorPalette[0];
+    // Name only needs to be unique among siblings under the same parent.
+    const dup = folders.some(f =>
+      f.name.toLowerCase() === name.toLowerCase() &&
+      folderParentId(f) === parentId &&
+      (!editingFolderDoc || f.id !== editingFolderDoc.id)
+    );
+    if (dup) { alert("A folder with that name already exists in this location."); return; }
+
+    let color = null;
+    if (!parentId) {
+      // Only top-level folders store a real colour choice — subfolders
+      // always shade off the root ancestor's colour instead.
+      const selectedSwatch = document.querySelector("#folder-swatches .swatch.selected");
+      color = selectedSwatch ? selectedSwatch.dataset.color : folderColorPalette[0];
+    }
     const pending = folderImageInput.dataset.pendingImage;
     let image;
     if (pending === "REMOVE") image = null;
@@ -1473,10 +1649,10 @@
 
     try {
       if (editingFolderDoc) {
-        // Renaming is safe — notes link by folderId, not by name.
-        await updateDoc(doc(db, "folders", editingFolderDoc.id), { name, color, image });
+        // Renaming/reparenting is safe — notes link by folderId, not by name/path.
+        await updateDoc(doc(db, "folders", editingFolderDoc.id), { name, color, image, parentId });
       } else {
-        await addDoc(collection(db, "folders"), { name, color, image, owner: activeOwner });
+        await addDoc(collection(db, "folders"), { name, color, image, parentId, owner: activeOwner });
       }
       folderOverlay.classList.remove("open");
     } catch (err) {
@@ -1486,21 +1662,25 @@
 
   document.getElementById("folder-delete-btn").addEventListener("click", async () => {
     if (!editingFolderDoc) return;
-    const notesInFolder = notes.filter(n => n.folderId === editingFolderDoc.id);
+    const idsToDelete = [editingFolderDoc.id, ...folderDescendantIds(editingFolderDoc.id)];
+    const subCount = idsToDelete.length - 1;
+    const notesAffected = notes.filter(n => idsToDelete.includes(n.folderId));
 
-    if (notesInFolder.length === 0) {
-      if (!confirm(`Delete the "${editingFolderDoc.name}" folder?`)) return;
+    if (notesAffected.length === 0) {
+      const subMsg = subCount > 0 ? ` and its ${subCount} subfolder${subCount === 1 ? "" : "s"}` : "";
+      if (!confirm(`Delete "${editingFolderDoc.name}"${subMsg}?`)) return;
     } else {
+      const subMsg = subCount > 0 ? ` (including ${subCount} subfolder${subCount === 1 ? "" : "s"})` : "";
       const deleteNotesToo = confirm(
-        `"${editingFolderDoc.name}" has ${notesInFolder.length} note(s) in it.\n\n` +
-        `Press OK to delete the folder AND those notes.\n` +
-        `Press Cancel to delete just the folder and leave the notes unfiled.`
+        `"${editingFolderDoc.name}"${subMsg} has ${notesAffected.length} note(s) in it.\n\n` +
+        `Press OK to delete the folder${subCount > 0 ? " tree" : ""} AND those notes.\n` +
+        `Press Cancel to delete just the folder${subCount > 0 ? " tree" : ""} and leave the notes unfiled.`
       );
       try {
         if (deleteNotesToo) {
-          await Promise.all(notesInFolder.map(n => deleteDoc(doc(db, "notes", n.id))));
+          await Promise.all(notesAffected.map(n => deleteDoc(doc(db, "notes", n.id))));
         } else {
-          await Promise.all(notesInFolder.map(n => updateDoc(doc(db, "notes", n.id), { folderId: null })));
+          await Promise.all(notesAffected.map(n => updateDoc(doc(db, "notes", n.id), { folderId: null })));
         }
       } catch (err) {
         alert("Couldn't update the notes in that folder — " + err.message);
@@ -1509,7 +1689,8 @@
     }
 
     try {
-      await deleteDoc(doc(db, "folders", editingFolderDoc.id));
+      await Promise.all(idsToDelete.map(id => deleteDoc(doc(db, "folders", id))));
+      folderPath = folderPath.filter(id => !idsToDelete.includes(id));
       folderOverlay.classList.remove("open");
     } catch (err) {
       alert("Couldn't delete that folder — " + err.message);
