@@ -239,6 +239,10 @@
     padding: 6px;
   }
 
+  .folder-icon-card:hover .folder-shape {
+    transform: translateY(-2px);
+  }
+
   .folder-icon-card:hover .folder-shape .body {
     filter: brightness(0.97);
   }
@@ -264,31 +268,33 @@
 
   .folder-shape {
     position: relative;
-    width: 72px;
-    height: 56px;
+    width: 76px;
+    height: 62px;
     margin: 0 auto 10px;
+    transition: transform 0.15s ease;
   }
 
   .folder-shape .tab {
     position: absolute;
     top: 0;
     left: 6px;
-    width: 32px;
-    height: 12px;
-    border-radius: 4px 4px 0 0;
-    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.1);
+    width: 46px;
+    height: 32px;
+    border-radius: 9px 11px 0 0;
+    clip-path: polygon(0 0, 100% 0, 76% 100%, 0 100%);
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12);
   }
 
   .folder-shape .body {
     position: absolute;
-    top: 8px;
+    top: 18px;
     left: 0;
     width: 100%;
-    height: 48px;
-    border-radius: 4px;
+    height: 44px;
+    border-radius: 11px;
     background-size: cover;
     background-position: center;
-    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.16), inset 0 -3px 0 rgba(0,0,0,0.08);
   }
 
   .folder-icon-card .name {
