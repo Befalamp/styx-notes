@@ -394,12 +394,24 @@
   }
 
   .note {
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 14px;
     border-left: 4px solid transparent;
     cursor: pointer;
+  }
+
+  .note.trash-row {
+    cursor: default;
+  }
+
+  .trash-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
   }
 
   .note.label-red { border-left-color: var(--label-red); background: var(--tint-red); }
@@ -423,6 +435,23 @@
     line-height: 1.5;
     overflow-wrap: break-word;
     word-break: break-word;
+  }
+
+  .note-body h3, .note-body-editable h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 6px 0 4px;
+  }
+
+  .note-body ol, .note-body-editable ol {
+    margin: 4px 0 8px;
+    padding-left: 22px;
+  }
+
+  .note-body a, .note-body-editable a {
+    color: var(--accent);
+    text-decoration: underline;
   }
 
   .note-meta {
@@ -476,6 +505,23 @@
   .note-dates .due.overdue {
     color: var(--label-red);
     font-weight: 600;
+  }
+
+  .note-pin-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 13px;
+    opacity: 0.85;
+  }
+
+  .note-image {
+    width: 100%;
+    max-height: 140px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    display: block;
   }
 
   .checklist-item {
@@ -634,6 +680,12 @@
     border-radius: var(--radius);
     font-size: 14px;
     cursor: pointer;
+  }
+
+  .btn-secondary.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
   }
 
   .btn-danger {
@@ -808,6 +860,7 @@
       <div class="sidebar-item" data-folder="unfiled">Unfiled <span class="count" id="count-unfiled"></span></div>
       <div id="folder-list"></div>
       <div class="sidebar-item" id="new-folder-btn" style="color:var(--accent);font-weight:600;">+ New folder</div>
+      <div class="sidebar-item" data-folder="trash" id="trash-item">🗑 Trash <span class="count" id="count-trash"></span></div>
     </div>
 
     <div class="sidebar-section">
@@ -822,6 +875,7 @@
       <button class="sidebar-toggle-btn" id="sidebar-toggle" title="Show/hide sidebar">☰</button>
       <input class="search" id="search" type="text" placeholder="Search notes">
       <button class="btn-mic" id="mic-btn" title="Dictate a note">🎤</button>
+      <button class="btn-mic" id="reminder-btn" title="Enable due-date reminders">🔔</button>
       <div class="layout-toggle">
         <button data-layout="grid" class="active">Grid</button>
         <button data-layout="list">List</button>
@@ -839,18 +893,29 @@
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <span class="field-label">Title</span>
-    <input type="text" id="modal-title" class="modal-title-input" placeholder="Note title">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <input type="text" id="modal-title" class="modal-title-input" placeholder="Note title" style="flex:1;">
+      <button type="button" id="modal-pin-btn" class="btn-secondary" title="Pin this note" style="width:38px;height:38px;padding:0;flex-shrink:0;">📌</button>
+    </div>
 
     <span class="field-label">Note</span>
     <div class="toolbar-format">
       <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
       <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+      <button type="button" data-cmd="heading" title="Heading">H</button>
       <button type="button" data-cmd="insertUnorderedList" title="Bullet list">•</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>
+      <button type="button" data-cmd="link" title="Insert link">🔗</button>
       <button type="button" id="checklist-btn" title="Checklist">☑</button>
     </div>
     <div class="note-body-editable" id="modal-body" contenteditable="true"></div>
 
-    <div class="field-row">
+    <span class="field-label">Image (optional)</span>
+    <input type="file" id="note-image-input" accept="image/*">
+    <div id="note-image-preview" style="margin:10px 0;"></div>
+    <button class="btn-secondary" id="note-image-remove" type="button">Remove image</button>
+
+    <div class="field-row" style="margin-top:12px;">
       <div>
         <span class="field-label">Folder</span>
         <select id="modal-folder"></select>
@@ -997,7 +1062,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
     getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs,
-    setDoc, onSnapshot, query, where, orderBy
+    setDoc, onSnapshot, query, where, orderBy, enableIndexedDbPersistence
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
   import {
     getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
@@ -1017,6 +1082,12 @@
   const auth = getAuth(fbApp);
   const provider = new GoogleAuthProvider();
 
+  // Queue reads/writes locally when offline (e.g. dictating notes with no
+  // signal) and sync automatically once back online. Fails silently if
+  // multiple tabs are open or the browser doesn't support it — the app
+  // still works, it just won't queue offline writes in that case.
+  enableIndexedDbPersistence(db).catch(() => {});
+
   // ---------- live data ----------
   let notes = [];
   let folders = [];
@@ -1033,6 +1104,34 @@
   let folderPath = []; // stack of folder ids drilled into, in the "folders" layout — [] means at the root
 
   const folderColorPalette = ["#4f8a5b", "#3f6fa6", "#7a5c9e", "#d9a63f", "#d9534f", "#2f5d50", "#6b6b6b"];
+
+  let searchQuery = "";
+  let notifiedDueIds = new Set(); // this-session only, so reminders don't repeat every render
+  let pendingNoteImage = undefined; // undefined = unchanged, "REMOVE" = clear, else a data URL
+  let selectedPinned = false;
+
+  // ---------- notes helpers ----------
+  function activeNotes() { return notes.filter(n => !n.trashed); }
+  function trashedNotes() { return notes.filter(n => n.trashed); }
+
+  function sortByPinnedThenDate(list) {
+    return list.slice().sort((a, b) => {
+      const pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+      if (pinDiff !== 0) return pinDiff;
+      return (b.created || "").localeCompare(a.created || "");
+    });
+  }
+
+  function stripHtml(html) {
+    const d = document.createElement("div");
+    d.innerHTML = html || "";
+    return d.textContent || "";
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
 
   // ---------- folder hierarchy helpers ----------
   function folderParentId(f) { return f.parentId || null; }
@@ -1214,6 +1313,8 @@
       renderTags();
       renderCounts();
       renderNotes();
+      purgeOldTrash();
+      checkDueReminders();
     }, (err) => {
       console.error("Notes listener failed:", err);
       document.getElementById("notes-container").innerHTML =
@@ -1227,6 +1328,31 @@
       renderNotes();
     }, (err) => {
       console.error("Folders listener failed:", err);
+    });
+  }
+
+  // Trash empties itself after 30 days, checked opportunistically
+  // whenever notes refresh — there's no server-side scheduler here.
+  function purgeOldTrash() {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    notes
+      .filter(n => n.trashed && n.trashedAt && new Date(n.trashedAt).getTime() < cutoff)
+      .forEach(n => { deleteDoc(doc(db, "notes", n.id)).catch(() => {}); });
+  }
+
+  // Reminders only fire while this tab is open — there's no backend to
+  // schedule a real push notification for a specific time of day.
+  function checkDueReminders() {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const today = new Date().toISOString().slice(0, 10);
+    activeNotes().forEach(n => {
+      if (!n.due || notifiedDueIds.has(n.id)) return;
+      if (n.due <= today) {
+        notifiedDueIds.add(n.id);
+        try {
+          new Notification("Styx Notes", { body: `Due: ${n.title}` });
+        } catch (err) { /* ignore */ }
+      }
     });
   }
 
@@ -1252,7 +1378,7 @@
   // ============================================================
   function allTags() {
     const set = new Set();
-    notes.forEach(n => (n.tags || []).forEach(t => set.add(t)));
+    activeNotes().forEach(n => (n.tags || []).forEach(t => set.add(t)));
     return [...set];
   }
 
@@ -1275,15 +1401,16 @@
   }
 
   function renderCounts() {
-    document.getElementById("count-all").textContent = notes.length;
-    document.getElementById("count-unfiled").textContent = notes.filter(n => !n.folderId).length;
+    document.getElementById("count-all").textContent = activeNotes().length;
+    document.getElementById("count-unfiled").textContent = activeNotes().filter(n => !n.folderId).length;
+    document.getElementById("count-trash").textContent = trashedNotes().length || "";
   }
 
   function renderFolderSidebar() {
     const list = document.getElementById("folder-list");
     list.innerHTML = folderTreeFlat().map(({ folder: f, depth }) => `
       <div class="sidebar-item${currentFolder === f.id ? " active" : ""}" data-folder="${f.id}" style="padding-left:${8 + depth * 16}px;">
-        ${f.name} <span class="count">${notes.filter(n => n.folderId === f.id).length}</span>
+        ${f.name} <span class="count">${activeNotes().filter(n => n.folderId === f.id).length}</span>
       </div>
     `).join("");
     list.querySelectorAll(".sidebar-item[data-folder]").forEach(el => {
@@ -1291,12 +1418,13 @@
     });
     document.querySelector('.sidebar-item[data-folder="all"]').classList.toggle("active", currentFolder === "all");
     document.querySelector('.sidebar-item[data-folder="unfiled"]').classList.toggle("active", currentFolder === "unfiled");
+    document.getElementById("trash-item").classList.toggle("active", currentFolder === "trash");
   }
 
   function sidebarFolderClick(folderKey) {
   currentFolder = folderKey;
   folderPath = [];
-  if ((folderKey === "all" || folderKey === "unfiled") && currentLayout === "folders") {
+  if ((folderKey === "all" || folderKey === "unfiled" || folderKey === "trash") && currentLayout === "folders") {
     currentLayout = "grid";
     document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === "grid"));
     localStorage.setItem("lastLayout", "grid");
@@ -1310,6 +1438,7 @@
 
   document.querySelector('.sidebar-item[data-folder="all"]').addEventListener("click", () => sidebarFolderClick("all"));
   document.querySelector('.sidebar-item[data-folder="unfiled"]').addEventListener("click", () => sidebarFolderClick("unfiled"));
+  document.getElementById("trash-item").addEventListener("click", () => sidebarFolderClick("trash"));
 
   document.getElementById("new-folder-btn").addEventListener("click", () => {
     const defaultParent = (currentFolder !== "all" && currentFolder !== "unfiled") ? currentFolder : null;
@@ -1376,12 +1505,14 @@
     }
     return `
       <div class="note${labelClass}" data-id="${n.id}"${styleAttr}>
+        ${n.pinned ? `<span class="note-pin-badge" title="Pinned">📌</span>` : ""}
         ${topLineHtml}
         <h3>${n.title}</h3>
         <div class="note-dates">
           <span>Created ${formatDate(n.created)}</span>
           ${n.due ? `<span class="due${isOverdue(n.due) ? " overdue" : ""}">Due ${formatDate(n.due)}</span>` : ""}
         </div>
+        ${n.image ? `<img class="note-image" src="${n.image}" alt="">` : ""}
         <div class="note-body">${n.body}</div>
         <div class="note-meta">
           ${(n.tags || []).map(t => `<span class="tag">#${t}</span>`).join("")}
@@ -1392,7 +1523,7 @@
 
   function folderIconCardHtml(f) {
     const bodyStyle = f.image ? `background-image:url('${f.image}');` : "";
-    const directNoteCount = notes.filter(n => n.folderId === f.id).length;
+    const directNoteCount = activeNotes().filter(n => n.folderId === f.id).length;
     const subCount = folderChildren(f.id).length;
     const countLabel = subCount > 0
       ? `${directNoteCount} notes, ${subCount} subfolder${subCount === 1 ? "" : "s"}`
@@ -1444,8 +1575,72 @@
     });
   }
 
+  function trashItemHtml(n) {
+    return `
+      <div class="note trash-row" data-id="${n.id}">
+        <h3>${n.title}</h3>
+        <div class="note-body">${n.body}</div>
+        <div class="trash-actions">
+          <button class="btn-secondary trash-restore" data-id="${n.id}" style="margin-left:0;">Restore</button>
+          <button class="btn-danger trash-delete-forever" data-id="${n.id}" style="margin-left:0;margin-right:0;">Delete forever</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindTrashActions(container) {
+    container.querySelectorAll(".trash-restore").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await updateDoc(doc(db, "notes", btn.dataset.id), { trashed: false });
+        } catch (err) { showAlert("Couldn't restore that note — " + err.message); }
+      });
+    });
+    container.querySelectorAll(".trash-delete-forever").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!(await showConfirm("Permanently delete this note? This can't be undone."))) return;
+        try {
+          await deleteDoc(doc(db, "notes", btn.dataset.id));
+        } catch (err) { showAlert("Couldn't delete that note — " + err.message); }
+      });
+    });
+  }
+
   function renderNotes() {
     const container = document.getElementById("notes-container");
+
+    if (currentFolder === "trash") {
+      container.className = "notes-detail";
+      const trashed = trashedNotes();
+      if (trashed.length === 0) {
+        container.innerHTML = `<div class="empty-state">Trash is empty.</div>`;
+        return;
+      }
+      const emptyBtn = `<div style="margin-bottom:14px;"><button class="btn-secondary" id="empty-trash-btn">Empty trash (${trashed.length})</button></div>`;
+      container.innerHTML = emptyBtn + `<div class="notes">${trashed.map(trashItemHtml).join("")}</div>`;
+      bindTrashActions(container);
+      document.getElementById("empty-trash-btn").addEventListener("click", async () => {
+        if (!(await showConfirm(`Permanently delete all ${trashed.length} note(s) in trash? This can't be undone.`))) return;
+        try {
+          await Promise.all(trashed.map(n => deleteDoc(doc(db, "notes", n.id))));
+        } catch (err) { showAlert("Couldn't empty the trash — " + err.message); }
+      });
+      return;
+    }
+
+    if (searchQuery) {
+      container.className = "notes-detail";
+      const q = searchQuery;
+      const matches = sortByPinnedThenDate(activeNotes().filter(n =>
+        n.title.toLowerCase().includes(q) ||
+        stripHtml(n.body).toLowerCase().includes(q) ||
+        (n.tags || []).some(t => t.toLowerCase().includes(q))
+      ));
+      container.innerHTML = matches.length
+        ? `<div class="notes ${currentLayout === "list" ? "list" : "grid"}">${matches.map(noteCardHtml).join("")}</div>`
+        : `<div class="empty-state">No notes match "${escapeHtml(searchQuery)}".</div>`;
+      return;
+    }
 
     if (currentLayout === "folders") {
       container.className = "notes-detail";
@@ -1479,7 +1674,7 @@
         `</div>`;
 
       const subfolders = folderChildren(activeId);
-      const directNotes = notes.filter(n => n.folderId === activeId);
+      const directNotes = sortByPinnedThenDate(activeNotes().filter(n => n.folderId === activeId));
 
       let bodyHtml = "";
       if (subfolders.length > 0) {
@@ -1508,13 +1703,14 @@
       return;
     }
 
-    let filtered = notes;
-    if (currentFolder === "unfiled") filtered = notes.filter(n => !n.folderId);
-    else if (currentFolder !== "all") filtered = notes.filter(n => n.folderId === currentFolder);
+    let filtered = activeNotes();
+    if (currentFolder === "unfiled") filtered = filtered.filter(n => !n.folderId);
+    else if (currentFolder !== "all") filtered = filtered.filter(n => n.folderId === currentFolder);
 
     if (currentTag) {
       filtered = filtered.filter(n => (n.tags || []).includes(currentTag));
     }
+    filtered = sortByPinnedThenDate(filtered);
 
     const subfolders = (currentFolder !== "all" && currentFolder !== "unfiled")
       ? folderChildren(currentFolder)
@@ -1557,11 +1753,39 @@
 
   document.getElementById("notes-container").addEventListener("click", (e) => {
     if (e.target.closest(".folder-icon-card") || e.target.closest(".folder-back")) return;
-    if (e.target.closest("input[type='checkbox']")) return; // checklist ticks aren't persisted yet
+    if (e.target.closest(".trash-row")) return;
+    if (e.target.closest("input[type='checkbox']")) return; // handled by the 'change' listener below
     const card = e.target.closest(".note[data-id]");
     if (!card) return;
     const note = notes.find(n => n.id === card.dataset.id);
     if (note) openModal(note);
+  });
+
+  // Checklist ticks persist by re-serialising the note's stored HTML
+  // with the matching checkbox's checked state flipped.
+  document.getElementById("notes-container").addEventListener("change", async (e) => {
+    const checkbox = e.target.closest(".checklist-item input[type='checkbox']");
+    if (!checkbox) return;
+    const noteEl = checkbox.closest(".note[data-id]");
+    if (!noteEl) return;
+    const noteId = noteEl.dataset.id;
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+    const bodyEl = noteEl.querySelector(".note-body");
+    const boxesInView = Array.from(bodyEl.querySelectorAll("input[type='checkbox']"));
+    const idx = boxesInView.indexOf(checkbox);
+    if (idx === -1) return;
+    const temp = document.createElement("div");
+    temp.innerHTML = note.body;
+    const boxesInSource = temp.querySelectorAll("input[type='checkbox']");
+    if (!boxesInSource[idx]) return;
+    if (checkbox.checked) boxesInSource[idx].setAttribute("checked", "");
+    else boxesInSource[idx].removeAttribute("checked");
+    try {
+      await updateDoc(doc(db, "notes", noteId), { body: temp.innerHTML });
+    } catch (err) {
+      showAlert("Couldn't save that checklist tick — " + err.message);
+    }
   });
 
   document.querySelectorAll(".layout-toggle button").forEach(btn => {
@@ -1575,6 +1799,41 @@
       renderNotes();
     });
   });
+
+  document.getElementById("search").addEventListener("input", (e) => {
+    searchQuery = e.target.value.trim().toLowerCase();
+    renderNotes();
+  });
+
+  // ============================================================
+  // REMINDERS — local Notification while this tab is open. There's
+  // no backend here, so this can't be a true scheduled push at a
+  // specific time; it checks due dates whenever notes refresh.
+  // ============================================================
+  const reminderBtn = document.getElementById("reminder-btn");
+  function updateReminderBtnState() {
+    const on = typeof Notification !== "undefined" && Notification.permission === "granted";
+    reminderBtn.classList.toggle("active", on);
+    reminderBtn.title = on ? "Due-date reminders on" : "Enable due-date reminders";
+  }
+  reminderBtn.addEventListener("click", async () => {
+    if (typeof Notification === "undefined") {
+      showAlert("This browser doesn't support notifications.");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      showAlert("Reminders are already on — due notes notify you while this tab is open.");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      showAlert("Notifications are blocked for this site in your browser settings — reminders can't be enabled from here.");
+      return;
+    }
+    const result = await Notification.requestPermission();
+    updateReminderBtnState();
+    if (result === "granted") checkDueReminders();
+  });
+  updateReminderBtnState();
 
   // ============================================================
   // NOTE MODAL
@@ -1605,6 +1864,11 @@
     document.querySelectorAll("#modal-swatches .swatch").forEach(s =>
       s.classList.toggle("selected", s.dataset.label === selectedLabel)
     );
+    selectedPinned = note ? !!note.pinned : false;
+    document.getElementById("modal-pin-btn").classList.toggle("active", selectedPinned);
+    pendingNoteImage = undefined;
+    document.getElementById("note-image-input").value = "";
+    renderNoteImagePreview(note ? (note.image || null) : null);
     document.getElementById("modal-delete").style.display = note ? "inline-block" : "none";
     document.getElementById("modal-save").textContent = note ? "Save changes" : "Save note";
     overlay.classList.add("open");
@@ -1616,6 +1880,35 @@
     editingNoteId = null;
   }
 
+  function renderNoteImagePreview(image) {
+    const preview = document.getElementById("note-image-preview");
+    preview.innerHTML = image
+      ? `<img src="${image}" style="width:100%;max-height:140px;object-fit:cover;border-radius:4px;">`
+      : `<span class="field-label" style="margin:0">No image attached</span>`;
+  }
+
+  document.getElementById("note-image-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingNoteImage = reader.result;
+      renderNoteImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById("note-image-remove").addEventListener("click", () => {
+    document.getElementById("note-image-input").value = "";
+    pendingNoteImage = "REMOVE";
+    renderNoteImagePreview(null);
+  });
+
+  document.getElementById("modal-pin-btn").addEventListener("click", () => {
+    selectedPinned = !selectedPinned;
+    document.getElementById("modal-pin-btn").classList.toggle("active", selectedPinned);
+  });
+
   document.getElementById("new-note-btn").addEventListener("click", () => openModal(null));
   document.getElementById("modal-cancel").addEventListener("click", closeModal);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
@@ -1623,7 +1916,15 @@
   document.querySelectorAll(".toolbar-format button[data-cmd]").forEach(btn => {
     btn.addEventListener("click", () => {
       modalBody.focus();
-      document.execCommand(btn.dataset.cmd, false, null);
+      const cmd = btn.dataset.cmd;
+      if (cmd === "heading") {
+        document.execCommand("formatBlock", false, "<h3>");
+      } else if (cmd === "link") {
+        const url = window.prompt("Link URL:");
+        if (url) document.execCommand("createLink", false, url);
+      } else {
+        document.execCommand(cmd, false, null);
+      }
     });
   });
 
@@ -1653,7 +1954,11 @@
       tags,
       label: selectedLabel,
       due: document.getElementById("modal-due").value,
+      pinned: selectedPinned,
     };
+    if (pendingNoteImage === "REMOVE") payload.image = null;
+    else if (pendingNoteImage) payload.image = pendingNoteImage;
+    // else: leave image untouched on update, or absent (null) on create
 
     try {
       if (editingNoteId) {
@@ -1661,6 +1966,7 @@
       } else {
         await addDoc(collection(db, "notes"), {
           ...payload,
+          image: payload.image || null,
           owner: activeOwner,
           created: new Date().toISOString().slice(0, 10),
         });
@@ -1676,7 +1982,7 @@
     if (!editingNoteId) return;
     if (!(await showConfirm("Delete this note?"))) return;
     try {
-      await deleteDoc(doc(db, "notes", editingNoteId));
+      await updateDoc(doc(db, "notes", editingNoteId), { trashed: true, trashedAt: new Date().toISOString() });
       closeModal();
     } catch (err) {
       console.error(err);
