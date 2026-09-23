@@ -1283,6 +1283,22 @@
     `;
   }
 
+  function bindSubfolderNavCards(container) {
+    container.querySelectorAll(".folder-icon-card").forEach(card => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".folder-edit-btn")) return;
+        sidebarFolderClick(card.dataset.folder);
+      });
+    });
+    container.querySelectorAll(".folder-edit-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const folderDoc = folders.find(f => f.id === btn.dataset.folderId);
+        if (folderDoc) openFolderEditor(folderDoc);
+      });
+    });
+  }
+
   function bindFolderIconCards(container) {
     container.querySelectorAll(".folder-icon-card").forEach(card => {
       card.addEventListener("click", (e) => {
@@ -1372,16 +1388,26 @@
       filtered = filtered.filter(n => (n.tags || []).includes(currentTag));
     }
 
+    const subfolders = (currentFolder !== "all" && currentFolder !== "unfiled")
+      ? folderChildren(currentFolder)
+      : [];
+    const subfolderHtml = subfolders.length > 0
+      ? `<div class="notes folders" style="margin-bottom:20px;">${subfolders.map(folderIconCardHtml).join("")}</div>`
+      : "";
+
     if (filtered.length === 0) {
-      container.className = "notes " + currentLayout;
-      container.innerHTML = `<div class="empty-state">Nothing filed here yet.</div>`;
+      container.className = "notes-detail";
+      container.innerHTML = subfolderHtml + (subfolders.length === 0
+        ? `<div class="empty-state">Nothing filed here yet.</div>`
+        : "");
+      if (subfolders.length > 0) bindSubfolderNavCards(container);
       return;
     }
 
     if (currentLayout === "grouped") {
-      container.className = "notes grouped";
+      container.className = "notes-detail";
       const groupIds = [...new Set(filtered.map(n => n.folderId || "unfiled"))];
-      container.innerHTML = groupIds.map(gid => {
+      const groupedHtml = groupIds.map(gid => {
         const label = gid === "unfiled" ? "Unfiled" : folderNameFor(gid);
         const groupNotes = filtered.filter(n => (n.folderId || "unfiled") === gid);
         return `
@@ -1391,11 +1417,14 @@
           </div>
         `;
       }).join("");
+      container.innerHTML = subfolderHtml + `<div class="notes grouped">${groupedHtml}</div>`;
+      if (subfolders.length > 0) bindSubfolderNavCards(container);
       return;
     }
 
-    container.className = "notes " + currentLayout;
-    container.innerHTML = filtered.map(noteCardHtml).join("");
+    container.className = "notes-detail";
+    container.innerHTML = subfolderHtml + `<div class="notes ${currentLayout}">${filtered.map(noteCardHtml).join("")}</div>`;
+    if (subfolders.length > 0) bindSubfolderNavCards(container);
   }
 
   document.getElementById("notes-container").addEventListener("click", (e) => {
