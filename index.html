@@ -1099,9 +1099,30 @@
     return f ? f.name : "Unfiled";
   }
 
+  function tintFromColor(hex) {
+    // Blend the folder's colour lightly into the current surface colour,
+    // so it reads the same way the fixed red/amber/green/blue/purple
+    // tints do, but works for any folder colour and respects dark theme.
+    const surfaceHex = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff';
+    const c1 = hexToRgb(hex);
+    const c2 = hexToRgb(surfaceHex);
+    const mixed = c1.map((v, i) => Math.round(v * 0.22 + c2[i] * 0.78));
+    return '#' + mixed.map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
   function noteCardHtml(n) {
+    let labelClass = "";
+    let styleAttr = "";
+    if (n.label) {
+      labelClass = " label-" + n.label;
+    } else if (n.folderId) {
+      const folder = folders.find(f => f.id === n.folderId);
+      if (folder && folder.color) {
+        styleAttr = ` style="border-left-color:${folder.color}; background:${tintFromColor(folder.color)};"`;
+      }
+    }
     return `
-      <div class="note${n.label ? " label-" + n.label : ""}" data-id="${n.id}">
+      <div class="note${labelClass}" data-id="${n.id}"${styleAttr}>
         <h3>${n.title}</h3>
         <div class="note-dates">
           <span>Created ${formatDate(n.created)}</span>
