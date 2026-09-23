@@ -371,6 +371,9 @@
     font-size: 11px;
     color: var(--ink-soft);
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .empty-state {
@@ -1205,17 +1208,26 @@
     return '#' + mixed.map(v => v.toString(16).padStart(2, '0')).join('');
   }
 
+  function folderIconSvg(color, size) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" style="flex-shrink:0;"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`;
+  }
+
   function noteCardHtml(n) {
     let labelClass = "";
     let styleAttr = "";
+    let folderIconHtml = "";
+    let folderColorForIcon = null;
+    if (n.folderId) {
+      const folder = folders.find(f => f.id === n.folderId);
+      if (folder) folderColorForIcon = resolveFolderColor(folder);
+    }
     if (n.label) {
       labelClass = " label-" + n.label;
-    } else if (n.folderId) {
-      const folder = folders.find(f => f.id === n.folderId);
-      if (folder) {
-        const resolved = resolveFolderColor(folder);
-        styleAttr = ` style="border-left-color:${resolved}; background:${tintFromColor(resolved)};"`;
-      }
+    } else if (folderColorForIcon) {
+      styleAttr = ` style="border-left-color:${folderColorForIcon}; background:${tintFromColor(folderColorForIcon)};"`;
+    }
+    if (folderColorForIcon) {
+      folderIconHtml = folderIconSvg(folderColorForIcon, 12);
     }
     return `
       <div class="note${labelClass}" data-id="${n.id}"${styleAttr}>
@@ -1227,7 +1239,7 @@
         <div class="note-body">${n.body}</div>
         <div class="note-meta">
           ${(n.tags || []).map(t => `<span class="tag">#${t}</span>`).join("")}
-          <span class="note-folder">${folderNameFor(n.folderId)}</span>
+          <span class="note-folder">${folderIconHtml}${folderNameFor(n.folderId)}</span>
         </div>
       </div>
     `;
