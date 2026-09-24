@@ -437,6 +437,14 @@
     word-break: break-word;
   }
 
+  .note-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .note-body h3, .note-body-editable h3 {
     font-size: 14px;
     font-weight: 700;
@@ -719,6 +727,10 @@
   @media (max-width: 720px) {
     .app {
       grid-template-columns: 1fr;
+    }
+
+    .main {
+      grid-column: 1 / -1;
     }
 
     .sidebar {
