@@ -1554,6 +1554,23 @@
     `;
   }
 
+  // Pseudo-folder for notes with no folderId — no edit button, since it
+  // isn't a real folder doc.
+  function unfiledFolderCardHtml() {
+    const count = activeNotes().filter(n => !n.folderId).length;
+    return `
+      <div class="folder-icon-card" data-folder="unfiled">
+        <div class="folder-shape">
+          <div class="styx-folder" style="--tab-color:${folderColorPalette[6]};">
+            <div class="styx-folder__front"></div>
+          </div>
+        </div>
+        <div class="name">Unfiled</div>
+        <div class="count">${count} notes</div>
+      </div>
+    `;
+  }
+
   function bindSubfolderNavCards(container) {
     container.querySelectorAll(".folder-icon-card").forEach(card => {
       card.addEventListener("click", (e) => {
@@ -1658,19 +1675,36 @@
       container.className = "notes-detail";
 
       if (folderPath.length === 0) {
-        // Root of folder browsing — just the top-level folders.
+        // Root of folder browsing — the top-level folders, plus Unfiled:
+        // first while it has notes in it, last once it's empty.
         const topLevel = folderChildren(null);
-        if (topLevel.length === 0) {
-          container.innerHTML = `<div class="empty-state">No folders yet — use "+ New folder" in the sidebar.</div>`;
-          return;
-        }
-        container.innerHTML = `<div class="notes folders">${topLevel.map(folderIconCardHtml).join("")}</div>`;
+        const hasUnfiled = activeNotes().some(n => !n.folderId);
+        const cardsHtml = topLevel.map(folderIconCardHtml).join("");
+        const emptyHtml = topLevel.length === 0
+          ? `<div class="empty-state">No folders yet — use "+ New folder" in the sidebar.</div>`
+          : "";
+        container.innerHTML = `<div class="notes folders">${hasUnfiled ? unfiledFolderCardHtml() + cardsHtml : cardsHtml + unfiledFolderCardHtml()}</div>` + emptyHtml;
         bindFolderIconCards(container);
         return;
       }
 
       // Drilled into a folder — breadcrumb, its subfolders, and its own direct notes.
       const activeId = folderPath[folderPath.length - 1];
+
+      if (activeId === "unfiled") {
+        const unfiledNotes = sortByPinnedThenDate(activeNotes().filter(n => !n.folderId));
+        container.innerHTML =
+          `<div class="folder-back"><span class="crumb crumb-link" id="unfiled-back">All folders</span> › <span class="crumb">Unfiled</span></div>` +
+          (unfiledNotes.length > 0
+            ? `<div class="notes">${unfiledNotes.map(noteCardHtml).join("")}</div>`
+            : `<div class="empty-state">No unfiled notes.</div>`);
+        document.getElementById("unfiled-back").addEventListener("click", () => {
+          folderPath = [];
+          renderNotes();
+        });
+        return;
+      }
+
       const activeFolder = folders.find(f => f.id === activeId);
       if (!activeFolder) { folderPath = []; renderNotes(); return; }
 
