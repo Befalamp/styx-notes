@@ -1919,6 +1919,15 @@
       const cmd = btn.dataset.cmd;
       if (cmd === "heading") {
         document.execCommand("insertHTML", false, "<h3>Heading</h3>");
+        const headings = modalBody.querySelectorAll("h3");
+        const h3 = headings[headings.length - 1];
+        if (h3) {
+          const range = document.createRange();
+          range.selectNodeContents(h3);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
       } else if (cmd === "link") {
         const url = window.prompt("Link URL:");
         if (!url) return;
