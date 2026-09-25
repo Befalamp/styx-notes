@@ -33,5 +33,33 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "New voice note",
+      "short_name": "Voice note",
+      "description": "Start dictating a new note",
+      "url": "./index.html?action=voice",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "New note",
+      "short_name": "New note",
+      "description": "Start a new typed note",
+      "url": "./index.html?action=new",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

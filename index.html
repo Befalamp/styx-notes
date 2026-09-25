@@ -1380,6 +1380,20 @@
     document.getElementById("admin-btn").style.display = isAdmin ? "block" : "none";
     updateViewingBanner();
     subscribeToData(activeOwner);
+    runLaunchAction();
+  }
+
+  // Home-screen shortcuts open index.html?action=voice|new. Handle it once,
+  // then drop the query so a refresh doesn't repeat it.
+  let launchActionDone = false;
+  function runLaunchAction() {
+    if (launchActionDone) return;
+    launchActionDone = true;
+    const action = new URLSearchParams(location.search).get("action");
+    if (!action) return;
+    history.replaceState(history.state, "", location.pathname);
+    if (action === "voice") startDictation({ newNote: true });
+    else if (action === "new") openModal(null);
   }
 
   function showNotAuthorised(email) {
