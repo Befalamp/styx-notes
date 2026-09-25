@@ -891,6 +891,7 @@
       <div class="sidebar-item" data-folder="unfiled">Unfiled <span class="count" id="count-unfiled"></span></div>
       <div id="folder-list"></div>
       <div class="sidebar-item" id="new-folder-btn" style="color:var(--accent);font-weight:600;">+ New folder</div>
+      <div class="sidebar-item" data-folder="archive" id="archive-item">🗄 Archive <span class="count" id="count-archive"></span></div>
       <div class="sidebar-item" data-folder="trash" id="trash-item">🗑 Trash <span class="count" id="count-trash"></span></div>
     </div>
 
@@ -977,6 +978,7 @@
 
     <div class="modal-actions">
       <button class="btn-danger" id="modal-delete" style="display:none;">Delete</button>
+      <button class="btn-secondary" id="modal-archive" style="display:none;">Archive</button>
       <button class="btn-secondary" id="modal-cancel">Cancel</button>
       <button class="btn-primary" id="modal-save" style="margin-left:0">Save note</button>
     </div>
@@ -1155,7 +1157,9 @@
   let selectedPinned = false;
 
   // ---------- notes helpers ----------
-  function activeNotes() { return notes.filter(n => !n.trashed); }
+  // Archived notes are kept but hidden from every normal view and count.
+  function activeNotes() { return notes.filter(n => !n.trashed && !n.archived); }
+  function archivedNotes() { return notes.filter(n => n.archived && !n.trashed); }
   function trashedNotes() { return notes.filter(n => n.trashed); }
 
   function sortByPinnedThenDate(list) {
@@ -1588,6 +1592,7 @@
     document.getElementById("count-all").textContent = activeNotes().length;
     document.getElementById("count-unfiled").textContent = activeNotes().filter(n => !n.folderId).length;
     document.getElementById("count-trash").textContent = trashedNotes().length || "";
+    document.getElementById("count-archive").textContent = archivedNotes().length || "";
   }
 
   function renderFolderSidebar() {
@@ -1603,6 +1608,7 @@
     document.querySelector('.sidebar-item[data-folder="all"]').classList.toggle("active", currentFolder === "all");
     document.querySelector('.sidebar-item[data-folder="unfiled"]').classList.toggle("active", currentFolder === "unfiled");
     document.getElementById("trash-item").classList.toggle("active", currentFolder === "trash");
+    document.getElementById("archive-item").classList.toggle("active", currentFolder === "archive");
   }
 
   function sidebarFolderClick(folderKey) {
@@ -1612,7 +1618,7 @@
   folderPath = (currentLayout === "folders" && folders.some(f => f.id === folderKey))
     ? folderAncestors(folderKey).map(f => f.id).concat([folderKey])
     : [];
-  if ((folderKey === "all" || folderKey === "unfiled" || folderKey === "trash") && currentLayout === "folders") {
+  if ((folderKey === "all" || folderKey === "unfiled" || folderKey === "trash" || folderKey === "archive") && currentLayout === "folders") {
     currentLayout = "grid";
     document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === "grid"));
     localStorage.setItem("lastLayout", "grid");
@@ -1627,6 +1633,7 @@
   document.querySelector('.sidebar-item[data-folder="all"]').addEventListener("click", () => sidebarFolderClick("all"));
   document.querySelector('.sidebar-item[data-folder="unfiled"]').addEventListener("click", () => sidebarFolderClick("unfiled"));
   document.getElementById("trash-item").addEventListener("click", () => sidebarFolderClick("trash"));
+  document.getElementById("archive-item").addEventListener("click", () => sidebarFolderClick("archive"));
 
   document.getElementById("new-folder-btn").addEventListener("click", () => {
     const defaultParent = (currentFolder !== "all" && currentFolder !== "unfiled") ? currentFolder : null;
@@ -1946,6 +1953,15 @@
       return;
     }
 
+    if (currentFolder === "archive") {
+      container.className = "notes-detail";
+      const archived = sortByPinnedThenDate(archivedNotes());
+      container.innerHTML = archived.length
+        ? `<div class="notes ${currentLayout === "list" ? "list" : "grid"}">${archived.map(noteCardHtml).join("")}</div>`
+        : `<div class="empty-state">Nothing archived. Open a note and tap Archive to tuck it away here without deleting it.</div>`;
+      return;
+    }
+
     if (currentLayout === "folders") {
       container.className = "notes-detail";
 
@@ -2197,6 +2213,9 @@
     document.getElementById("note-image-input").value = "";
     renderNoteImagePreview(note ? (note.image || null) : null);
     document.getElementById("modal-delete").style.display = note ? "inline-block" : "none";
+    const archiveBtn = document.getElementById("modal-archive");
+    archiveBtn.style.display = note ? "inline-block" : "none";
+    archiveBtn.textContent = note && note.archived ? "Unarchive" : "Archive";
     document.getElementById("modal-save").textContent = note ? "Save changes" : "Save note";
     overlay.classList.add("open");
     document.getElementById("modal-title").focus();
@@ -2360,6 +2379,17 @@
     } catch (err) {
       console.error(err);
       showAlert("Couldn't save that note — " + err.message);
+    }
+  });
+
+  document.getElementById("modal-archive").addEventListener("click", async () => {
+    if (!editingNoteId) return;
+    const note = notes.find(n => n.id === editingNoteId);
+    try {
+      await updateDoc(doc(db, "notes", editingNoteId), { archived: !(note && note.archived) });
+      closeModal();
+    } catch (err) {
+      showAlert("Couldn't archive that note — " + err.message);
     }
   });
 
