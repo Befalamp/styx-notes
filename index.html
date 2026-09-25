@@ -263,16 +263,10 @@
     opacity: 1;
   }
 
-  /* Touch screens have no hover, so keep it visible and easier to tap */
+  /* Touch screens have no hover, so the button would be an invisible tap
+     target — hide it; "Edit folder" in the breadcrumb bar covers editing. */
   @media (hover: none) {
-    .folder-edit-btn {
-      opacity: 1;
-      width: 30px;
-      height: 30px;
-      font-size: 14px;
-      top: 2px;
-      right: 2px;
-    }
+    .folder-edit-btn { display: none; }
   }
 
   /* ---- folder icon graphic ----
@@ -1688,6 +1682,7 @@
           return `<span class="crumb${isLast ? "" : " crumb-link"}" data-depth="${i}">${c.name}</span>`;
         }).join(" › ") +
         ` <span class="crumb-link" id="new-subfolder-link" style="margin-left:8px;">+ New subfolder</span>` +
+        ` <span class="crumb-link" id="edit-folder-link" style="margin-left:8px;">✎ Edit folder</span>` +
         `</div>`;
 
       const subfolders = folderChildren(activeId);
@@ -1716,6 +1711,9 @@
       });
       document.getElementById("new-subfolder-link").addEventListener("click", () => {
         openFolderEditor(null, activeId);
+      });
+      document.getElementById("edit-folder-link").addEventListener("click", () => {
+        openFolderEditor(activeFolder);
       });
       return;
     }
