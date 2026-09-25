@@ -835,6 +835,16 @@
 </div>
 
 <div class="app" style="display:none;">
+<script>
+  // Signed in last time? Show the app straight away instead of the sign-in
+  // screen while Firebase loads; the auth check below still confirms it.
+  try {
+    if (localStorage.getItem("styxSignedIn")) {
+      document.getElementById("auth-gate").style.display = "none";
+      document.querySelector(".app").style.display = "grid";
+    }
+  } catch (e) {}
+</script>
 
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
@@ -1103,6 +1113,7 @@
   }
 
   let searchQuery = "";
+  let notesLoaded = false; // false until the first notes snapshot arrives
   let notifiedDueIds = new Set(); // this-session only, so reminders don't repeat every render
   let pendingNoteImage = undefined; // undefined = unchanged, "REMOVE" = clear, else a data URL
   let selectedPinned = false;
@@ -1261,12 +1272,47 @@
   document.getElementById("sign-out-btn").addEventListener("click", () => signOut(auth));
   document.getElementById("not-authorised-signout").addEventListener("click", () => signOut(auth));
 
+  // Remembered between visits so a returning user skips the sign-in flash
+  // (see the inline script at the top of .app). Not a security boundary —
+  // Firestore rules decide what data anyone can read.
+  function rememberSignIn(email, isAdmin) {
+    try { localStorage.setItem("styxSignedIn", JSON.stringify({ email, isAdmin })); } catch (e) {}
+  }
+  function forgetSignIn() {
+    try { localStorage.removeItem("styxSignedIn"); } catch (e) {}
+  }
+  function rememberedSignIn() {
+    try { return JSON.parse(localStorage.getItem("styxSignedIn")); } catch (e) { return null; }
+  }
+
+  function showApp(email, isAdmin) {
+    currentUser = { email, isAdmin };
+    activeOwner = email;
+    document.getElementById("auth-gate").style.display = "none";
+    document.getElementById("not-authorised-gate").style.display = "none";
+    document.querySelector(".app").style.display = "grid";
+    document.getElementById("admin-btn").style.display = isAdmin ? "block" : "none";
+    updateViewingBanner();
+    subscribeToData(activeOwner);
+  }
+
+  function showNotAuthorised(email) {
+    forgetSignIn();
+    if (unsubNotes) { unsubNotes(); unsubNotes = null; }
+    if (unsubFolders) { unsubFolders(); unsubFolders = null; }
+    document.getElementById("auth-gate").style.display = "none";
+    document.querySelector(".app").style.display = "none";
+    document.getElementById("not-authorised-gate").style.display = "flex";
+    document.getElementById("not-authorised-email").textContent = email;
+  }
+
   onAuthStateChanged(auth, async (user) => {
     const authGate = document.getElementById("auth-gate");
     const notAuthGate = document.getElementById("not-authorised-gate");
     const appEl = document.querySelector(".app");
 
     if (!user) {
+      forgetSignIn();
       authGate.style.display = "flex";
       notAuthGate.style.display = "none";
       appEl.style.display = "none";
@@ -1274,6 +1320,12 @@
     }
 
     const email = user.email;
+    const remembered = rememberedSignIn();
+    const shownEarly = !!(remembered && remembered.email === email);
+    // Same user as last time: load their notes now and re-check access
+    // in the background, rather than waiting on that network round trip.
+    if (shownEarly) showApp(email, !!remembered.isAdmin);
+
     let userSnap;
     try {
       userSnap = await getDoc(doc(db, "allowedUsers", email));
@@ -1281,22 +1333,25 @@
       userSnap = null;
     }
 
-    if (!userSnap || !userSnap.exists()) {
-      authGate.style.display = "none";
-      appEl.style.display = "none";
-      notAuthGate.style.display = "flex";
-      document.getElementById("not-authorised-email").textContent = email;
+    if (!userSnap) {
+      // Couldn't check (e.g. offline) — keep a remembered user in; otherwise
+      // fall through to the not-authorised screen as before.
+      if (shownEarly) return;
+      showNotAuthorised(email);
+      return;
+    }
+    if (!userSnap.exists()) {
+      showNotAuthorised(email);
       return;
     }
 
-    currentUser = { email, isAdmin: !!userSnap.data().isAdmin };
-    activeOwner = email;
-    authGate.style.display = "none";
-    notAuthGate.style.display = "none";
-    appEl.style.display = "grid";
-    document.getElementById("admin-btn").style.display = currentUser.isAdmin ? "block" : "none";
-    updateViewingBanner();
-    subscribeToData(activeOwner);
+    const isAdmin = !!userSnap.data().isAdmin;
+    rememberSignIn(email, isAdmin);
+    if (!shownEarly) showApp(email, isAdmin);
+    else if (isAdmin !== !!remembered.isAdmin) {
+      currentUser.isAdmin = isAdmin;
+      document.getElementById("admin-btn").style.display = isAdmin ? "block" : "none";
+    }
   });
 
   function subscribeToData(ownerEmail) {
@@ -1306,6 +1361,7 @@
     const notesQuery = query(collection(db, "notes"), where("owner", "==", ownerEmail), orderBy("created", "desc"));
     unsubNotes = onSnapshot(notesQuery, (snapshot) => {
       notes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      notesLoaded = true;
       renderFolderSidebar();
       renderTags();
       renderCounts();
@@ -1655,6 +1711,7 @@
 
   function renderNotesView() {
     const container = document.getElementById("notes-container");
+    if (!notesLoaded) { container.innerHTML = ""; return; }
 
     if (currentFolder === "trash") {
       container.className = "notes-detail";
