@@ -5,7 +5,7 @@
 //
 // Bump this whenever the caching strategy itself changes — it's what
 // forces browsers to install a fresh service worker and clear old caches.
-const CACHE_VERSION = 'styx-notes-v14';
+const CACHE_VERSION = 'styx-notes-v15';
 // Holds whatever was just shared into the app until the page picks it up.
 const SHARE_CACHE = 'styx-share';
 
@@ -109,4 +109,30 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(request))
   );
+});
+
+// Due-date reminders pushed by the daily server job (functions/index.js).
+// They're data-only messages so this worker decides how they look.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = (event.data && event.data.json().data) || {}; } catch (err) {}
+  event.waitUntil(self.registration.showNotification(data.title || 'Styx Notes', {
+    body: data.body || 'You have a note due.',
+    tag: data.tag || 'styx-due',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: data.url || './index.html' },
+  }));
+});
+
+// Tapping a reminder focuses the open app, or opens it.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || './index.html', self.registration.scope).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = windows.find((w) => w.url.startsWith(self.registration.scope));
+    if (existing) return existing.focus();
+    return self.clients.openWindow(target);
+  })());
 });

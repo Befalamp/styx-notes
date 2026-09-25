@@ -1162,6 +1162,10 @@
   //          allow read, update, delete: if isAllowed() &&
   //            (resource.data.owner == request.auth.token.email || isAdmin());
   //        }
+  //        match /pushTokens/{token} {   // devices registered for reminders (REMINDERS-SETUP.md)
+  //          allow create, update: if isAllowed() && request.resource.data.owner == request.auth.token.email;
+  //          allow delete: if isAllowed() && resource.data.owner == request.auth.token.email;
+  //        }
   //      }
   //    }
   //
@@ -1195,6 +1199,11 @@
   messagingSenderId: "1003972186989",
   appId: "1:1003972186989:web:49f4fdcc01aef834aec064"
 };
+
+  // Web Push key for reminders when the app is closed (Firebase console →
+  // Project settings → Cloud Messaging → Web Push certificates). It's a
+  // public key, safe to publish. Leave empty to keep reminders in-app only.
+  const FCM_VAPID_KEY = "";
 
   const fbApp = initializeApp(firebaseConfig);
   const db = getFirestore(fbApp);
@@ -1467,6 +1476,7 @@
     updateViewingBanner();
     subscribeToData(activeOwner);
     runLaunchAction();
+    registerForPush();
   }
 
   // Home-screen shortcuts open index.html?action=voice|new. Handle it once,
@@ -1657,9 +1667,17 @@
       if (!n.due || notifiedDueIds.has(n.id)) return;
       if (n.due <= today) {
         notifiedDueIds.add(n.id);
-        try {
-          new Notification("Styx Notes", { body: `Due: ${n.title}` });
-        } catch (err) { /* ignore */ }
+        // Android only shows notifications made through the service worker
+        // (new Notification() throws there). The tag matches the push
+        // reminder's, so the same note never shows twice.
+        const body = `Due: ${n.title}`;
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.ready
+            .then(reg => reg.showNotification("Styx Notes", { body, tag: `due-${n.id}`, icon: "icons/icon-192.png", data: { url: "./index.html" } }))
+            .catch(() => {});
+        } else {
+          try { new Notification("Styx Notes", { body }); } catch (err) { /* ignore */ }
+        }
       }
     });
   }
@@ -1669,7 +1687,7 @@
     if (!currentUser) return;
     if (activeOwner !== currentUser.email) {
       banner.style.display = "block";
-      banner.innerHTML = `Viewing <b>${activeOwner}</b>'s notes (admin) — <a href="#" id="return-to-mine">Return to my notes</a>`;
+      banner.innerHTML = `Viewing <b>${escapeHtml(activeOwner)}</b>'s notes (admin) — <a href="#" id="return-to-mine">Return to my notes</a>`;
       document.getElementById("return-to-mine").addEventListener("click", (e) => {
         e.preventDefault();
         activeOwner = currentUser.email;
@@ -2394,22 +2412,50 @@
     reminderBtn.classList.toggle("active", on);
     reminderBtn.title = on ? "Due-date reminders on" : "Enable due-date reminders";
   }
+  // Push reminders: register this device with Firebase Cloud Messaging and
+  // store its token, so the daily server job (functions/index.js) can send
+  // due-date reminders even when the app is closed.
+  async function registerForPush() {
+    if (!FCM_VAPID_KEY || !currentUser || activeOwner !== currentUser.email) return false;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted" || !navigator.serviceWorker) return false;
+    try {
+      const { getMessaging, getToken, isSupported } =
+        await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js");
+      if (!(await isSupported())) return false;
+      const reg = await navigator.serviceWorker.ready;
+      const token = await getToken(getMessaging(fbApp), { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+      if (!token) return false;
+      await setDoc(doc(db, "pushTokens", token), {
+        owner: currentUser.email, token, updatedAt: new Date().toISOString(), device: navigator.userAgent.slice(0, 200),
+      });
+      return true;
+    } catch (err) {
+      console.error("Push registration failed:", err);
+      return false;
+    }
+  }
+
   reminderBtn.addEventListener("click", async () => {
     if (typeof Notification === "undefined") {
       showAlert("This browser doesn't support notifications.");
-      return;
-    }
-    if (Notification.permission === "granted") {
-      showAlert("Reminders are already on — due notes notify you while this tab is open.");
       return;
     }
     if (Notification.permission === "denied") {
       showAlert("Notifications are blocked for this site in your browser settings — reminders can't be enabled from here.");
       return;
     }
-    const result = await Notification.requestPermission();
-    updateReminderBtnState();
-    if (result === "granted") checkDueReminders();
+    if (Notification.permission !== "granted") {
+      const result = await Notification.requestPermission();
+      updateReminderBtnState();
+      if (result !== "granted") return;
+      checkDueReminders();
+    }
+    const pushOn = await registerForPush();
+    showAlert(pushOn
+      ? "Reminders are on for this device — you'll get a notification at 8am on the day a note is due, even when the app is closed."
+      : FCM_VAPID_KEY
+        ? "Reminders are on while the app is open, but this device couldn't be set up for reminders when it's closed."
+        : "Reminders are on while the app is open.");
   });
   updateReminderBtnState();
 
