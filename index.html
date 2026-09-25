@@ -178,6 +178,28 @@
     cursor: pointer;
   }
 
+  .dictation-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    background: var(--tint-red);
+    font-size: 13px;
+  }
+  .dictation-bar[hidden] { display: none; }
+  .dictation-bar button { margin-left: auto; padding: 4px 12px; font-size: 13px; }
+  .dictation-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--label-red);
+    animation: dictation-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes dictation-pulse { 50% { opacity: 0.3; } }
+  .btn-mic.listening, #modal-mic-btn.listening { background: var(--label-red); color: #fff; }
+
   .btn-mic {
     border: 1px solid var(--line);
     background: var(--surface);
@@ -915,6 +937,11 @@
       <button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>
       <button type="button" data-cmd="link" title="Insert link">🔗</button>
       <button type="button" id="checklist-btn" title="Checklist">☑</button>
+      <button type="button" id="modal-mic-btn" title="Dictate into this note">🎤</button>
+    </div>
+    <div class="dictation-bar" id="dictation-bar" hidden>
+      <span class="dictation-dot"></span> Listening… keep talking
+      <button type="button" class="btn-secondary" id="dictation-stop">Stop</button>
     </div>
     <div class="note-body-editable" id="modal-body" contenteditable="true"></div>
 
@@ -2144,6 +2171,7 @@
   }
 
   function closeModal() {
+    stopDictation();
     overlay.classList.remove("open");
     editingNoteId = null;
   }
@@ -2277,42 +2305,99 @@
   // ============================================================
   // VOICE CAPTURE (Web Speech API)
   // ============================================================
+  // Keeps listening until Stop is tapped. Each utterance is its own short
+  // recognition session, restarted automatically — Chrome on Android ends
+  // "continuous" sessions after a pause anyway and repeats text in them.
   const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
   const micBtn = document.getElementById("mic-btn");
+  const modalMicBtn = document.getElementById("modal-mic-btn");
+  const dictationBar = document.getElementById("dictation-bar");
+  let dictation = null; // { baseHtml, text, fillTitle } while listening
+  let recognition = null;
 
+  function renderDictation(interim = "") {
+    const spoken = (dictation.text + " " + interim).trim();
+    modalBody.innerHTML = dictation.baseHtml + (spoken ? `<p>${escapeHtml(spoken)}</p>` : "");
+  }
+
+  function startDictation({ newNote }) {
+    if (!SpeechRecognitionImpl) {
+      showAlert("This browser doesn't support voice capture (Chrome and Edge do).");
+      return;
+    }
+    if (dictation) return;
+    if (newNote) openModal(null);
+    dictation = { baseHtml: modalBody.innerHTML, text: "", fillTitle: !document.getElementById("modal-title").value.trim(), quietSessions: 0 };
+    micBtn.classList.add("listening");
+    modalMicBtn.classList.add("listening");
+    dictationBar.hidden = false;
+    listenOnce();
+  }
+
+  function listenOnce() {
+    recognition = new SpeechRecognitionImpl();
+    recognition.lang = "en-GB";
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    let finalPart = "";
+    recognition.addEventListener("result", (e) => {
+      if (!dictation) return;
+      let interim = "";
+      finalPart = "";
+      for (const r of e.results) {
+        if (r.isFinal) finalPart += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      renderDictation((finalPart + " " + interim).trim());
+    });
+    recognition.addEventListener("end", () => {
+      if (!dictation) return;
+      dictation.text = (dictation.text + " " + finalPart.trim()).trim();
+      renderDictation();
+      // Give up after a long silence (each quiet session is several seconds),
+      // and pause briefly between sessions so a failing engine can't spin.
+      dictation.quietSessions = finalPart.trim() ? 0 : dictation.quietSessions + 1;
+      if (dictation.quietSessions >= 12) { stopDictation(); return; }
+      setTimeout(() => {
+        if (!dictation) return;
+        try { listenOnce(); } catch (err) { stopDictation(); }
+      }, 250);
+    });
+    recognition.addEventListener("error", (e) => {
+      if (e.error === "no-speech" || e.error === "aborted") return; // "end" follows and restarts
+      const msg = e.error === "not-allowed" ? "Microphone access is blocked — allow it in your browser settings." : "Voice capture error: " + e.error;
+      stopDictation();
+      showAlert(msg);
+    });
+    recognition.start();
+  }
+
+  function stopDictation() {
+    if (!dictation) return;
+    const d = dictation;
+    dictation = null;
+    try { recognition && recognition.abort(); } catch (err) {}
+    micBtn.classList.remove("listening");
+    modalMicBtn.classList.remove("listening");
+    dictationBar.hidden = true;
+    const titleInput = document.getElementById("modal-title");
+    if (d.fillTitle && d.text && !titleInput.value.trim()) {
+      titleInput.value = d.text.split(/\s+/).slice(0, 8).join(" ");
+    }
+  }
+
+  micBtn.addEventListener("click", () => {
+    if (dictation) stopDictation();
+    else startDictation({ newNote: true });
+  });
+  modalMicBtn.addEventListener("click", () => {
+    if (dictation) stopDictation();
+    else startDictation({ newNote: false });
+  });
+  document.getElementById("dictation-stop").addEventListener("click", stopDictation);
   if (!SpeechRecognitionImpl) {
     micBtn.title = "Voice capture not supported in this browser";
-    micBtn.addEventListener("click", () => {
-      showAlert("This browser doesn't support in-page voice capture (Chrome/Edge do). Use the Android Auto → Keep pipeline for hands-free capture instead.");
-    });
-  } else {
-    const recognition = new SpeechRecognitionImpl();
-    recognition.lang = "en-GB";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    let listening = false;
-
-    micBtn.addEventListener("click", () => {
-      if (listening) return;
-      listening = true;
-      micBtn.style.background = "var(--label-red)";
-      try { recognition.start(); } catch (err) { listening = false; micBtn.style.background = ""; }
-    });
-
-    recognition.addEventListener("result", (e) => {
-      const transcript = e.results[0][0].transcript.trim();
-      if (!transcript) return;
-      openModal(null);
-      document.getElementById("modal-title").value = transcript.split(" ").slice(0, 8).join(" ");
-      modalBody.innerHTML = `<p>${escapeHtml(transcript)}</p>`;
-    });
-
-    recognition.addEventListener("end", () => { listening = false; micBtn.style.background = ""; });
-    recognition.addEventListener("error", (e) => {
-      listening = false;
-      micBtn.style.background = "";
-      if (e.error !== "no-speech") showAlert("Voice capture error: " + e.error);
-    });
+    modalMicBtn.style.display = "none";
   }
 
   // ============================================================
