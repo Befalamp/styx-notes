@@ -18,7 +18,7 @@ Until they're done, reminders still work **while the app is open**.
 1. Firebase console → ⚙ **Project settings** → **Cloud Messaging** tab.
 2. Under **Web configuration → Web Push certificates**, click **Generate key pair**.
 3. Copy the key (a long string starting with `B…`) and send it to Claude, or
-   paste it into `index.html` where it says `const FCM_VAPID_KEY = "";`.
+   paste it into `index.html` as `FCM_VAPID_KEY` (done — the key is already set).
    It's a public key, so it's safe to commit.
 
 ## 3. Add the rules for device registrations
