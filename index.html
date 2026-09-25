@@ -1242,7 +1242,6 @@
 
   let searchQuery = "";
   let notesLoaded = false; // false until the first notes snapshot arrives
-  let notifiedDueIds = new Set(); // this-session only, so reminders don't repeat every render
   let pendingNoteImage = undefined; // undefined = unchanged, "REMOVE" = clear, else a data URL
   let selectedPinned = false;
 
@@ -1632,7 +1631,6 @@
       renderCounts();
       renderNotes();
       purgeOldTrash();
-      checkDueReminders();
     }, (err) => {
       console.error("Notes listener failed:", err);
       document.getElementById("notes-container").innerHTML =
@@ -1656,30 +1654,6 @@
     notes
       .filter(n => n.trashed && n.trashedAt && new Date(n.trashedAt).getTime() < cutoff)
       .forEach(n => { deleteDoc(doc(db, "notes", n.id)).catch(() => {}); });
-  }
-
-  // Reminders only fire while this tab is open — there's no backend to
-  // schedule a real push notification for a specific time of day.
-  function checkDueReminders() {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    const today = new Date().toISOString().slice(0, 10);
-    activeNotes().forEach(n => {
-      if (!n.due || notifiedDueIds.has(n.id)) return;
-      if (n.due <= today) {
-        notifiedDueIds.add(n.id);
-        // Android only shows notifications made through the service worker
-        // (new Notification() throws there). The tag matches the push
-        // reminder's, so the same note never shows twice.
-        const body = `Due: ${n.title}`;
-        if (navigator.serviceWorker) {
-          navigator.serviceWorker.ready
-            .then(reg => reg.showNotification("Styx Notes", { body, tag: `due-${n.id}`, icon: "icons/icon-192.png", data: { url: "./index.html" } }))
-            .catch(() => {});
-        } else {
-          try { new Notification("Styx Notes", { body }); } catch (err) { /* ignore */ }
-        }
-      }
-    });
   }
 
   function updateViewingBanner() {
@@ -2448,14 +2422,13 @@
       const result = await Notification.requestPermission();
       updateReminderBtnState();
       if (result !== "granted") return;
-      checkDueReminders();
     }
+    // Reminders come only from the daily 8am job (functions/index.js), so
+    // opening the app never re-notifies about notes already on screen.
     const pushOn = await registerForPush();
     showAlert(pushOn
-      ? "Reminders are on for this device — you'll get a notification at 8am on the day a note is due, even when the app is closed."
-      : FCM_VAPID_KEY
-        ? "Reminders are on while the app is open, but this device couldn't be set up for reminders when it's closed."
-        : "Reminders are on while the app is open.");
+      ? "Reminders are on for this device — you'll get a notification at 8am on the day a note is due, and once for anything overdue."
+      : "This device couldn't be set up for reminders. Try again later, or check notifications are allowed for this app in your phone's settings.");
   });
   updateReminderBtnState();
 
