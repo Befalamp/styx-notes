@@ -1137,8 +1137,55 @@
   }
 
   function escapeHtml(str) {
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+
+  // Note bodies are rich text, so they can't just be escaped. Keep only the
+  // formatting the editor itself produces and drop everything else — scripts,
+  // event handlers, styles, iframes — so a crafted note can't run code (which
+  // matters most when an admin uses "View as" on someone else's notes).
+  const SAFE_TAGS = new Set(["P", "BR", "DIV", "SPAN", "B", "STRONG", "I", "EM", "U", "S",
+    "H1", "H2", "H3", "H4", "UL", "OL", "LI", "A", "INPUT", "BLOCKQUOTE", "PRE", "CODE", "HR", "IMG"]);
+  const DROP_WITH_CONTENT = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "TEMPLATE", "NOSCRIPT", "SVG", "MATH"]);
+  function sanitizeHtml(html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = String(html ?? "");
+    const clean = (node) => {
+      [...node.childNodes].forEach(child => {
+        if (child.nodeType === Node.COMMENT_NODE) { child.remove(); return; }
+        if (child.nodeType !== Node.ELEMENT_NODE) return;
+        const tag = child.tagName;
+        if (DROP_WITH_CONTENT.has(tag)) { child.remove(); return; }
+        if (!SAFE_TAGS.has(tag)) { clean(child); child.replaceWith(...child.childNodes); return; }
+        [...child.attributes].forEach(attr => {
+          const name = attr.name.toLowerCase(), value = attr.value;
+          const keep =
+            (tag === "A" && name === "href" && /^(https?:|mailto:|tel:)/i.test(value.trim())) ||
+            (tag === "A" && name === "target") ||
+            (tag === "IMG" && name === "src" && /^(https:|data:image\/)/i.test(value.trim())) ||
+            (tag === "INPUT" && (name === "type" || name === "checked")) ||
+            (name === "class" && value === "checklist-item");
+          if (!keep) child.removeAttribute(attr.name);
+        });
+        if (tag === "INPUT" && child.getAttribute("type") !== "checkbox") { child.remove(); return; }
+        if (tag === "IMG" && !child.getAttribute("src")) { child.remove(); return; }
+        if (tag === "A" && child.getAttribute("target")) child.setAttribute("rel", "noopener");
+        clean(child);
+      });
+    };
+    clean(tpl.content);
+    return tpl.innerHTML;
+  }
+
+  // Image URLs go into src/style attributes: only allow https or inline
+  // images, and escape so a value can't break out of the attribute.
+  function safeImageUrl(url) {
+    const u = String(url ?? "").trim();
+    return /^(https:|data:image\/)/i.test(u) ? escapeHtml(u).replace(/\(/g, "%28").replace(/\)/g, "%29") : "";
+  }
+
+  const LABELS = new Set(["red", "amber", "green", "blue", "purple"]);
 
 
   // ---------- folder hierarchy helpers ----------
@@ -1227,8 +1274,8 @@
       overlay.className = "modal-overlay open";
       overlay.innerHTML = `
         <div class="modal" style="width:380px;">
-          ${title ? `<p class="dialog-title">${title}</p>` : ""}
-          <p class="dialog-message">${message}</p>
+          ${title ? `<p class="dialog-title">${escapeHtml(title)}</p>` : ""}
+          <p class="dialog-message">${escapeHtml(message)}</p>
           <div class="modal-actions" id="dialog-actions"></div>
         </div>
       `;
@@ -1438,7 +1485,7 @@
   function renderTags() {
     const list = document.getElementById("tag-list");
     list.innerHTML = allTags().map(t =>
-      `<div class="sidebar-item${t === currentTag ? " active" : ""}" data-tag="${t}">#${t}</div>`
+      `<div class="sidebar-item${t === currentTag ? " active" : ""}" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}</div>`
     ).join("");
 
     list.querySelectorAll(".sidebar-item[data-tag]").forEach(el => {
@@ -1463,7 +1510,7 @@
     const list = document.getElementById("folder-list");
     list.innerHTML = folderTreeFlat().map(({ folder: f, depth }) => `
       <div class="sidebar-item${currentFolder === f.id ? " active" : ""}" data-folder="${f.id}" style="padding-left:${8 + depth * 16}px;">
-        ${f.name} <span class="count">${activeNotes().filter(n => n.folderId === f.id).length}</span>
+        ${escapeHtml(f.name)} <span class="count">${activeNotes().filter(n => n.folderId === f.id).length}</span>
       </div>
     `).join("");
     list.querySelectorAll(".sidebar-item[data-folder]").forEach(el => {
@@ -1551,22 +1598,22 @@
       styleAttr = ` style="border-left-color:${folderColorForIcon}; background:${tintFromColor(folderColorForIcon)};"`;
     }
     if (folderColorForIcon) {
-      topLineHtml = `<div class="note-folder-top">${folderIconSvg(folderColorForIcon, 12)}<span>${folderPathLabel(n.folderId)}</span></div>`;
+      topLineHtml = `<div class="note-folder-top">${folderIconSvg(folderColorForIcon, 12)}<span>${escapeHtml(folderPathLabel(n.folderId))}</span></div>`;
     }
     return `
       <div class="note" data-id="${n.id}"${styleAttr}>
         ${n.pinned ? `<span class="note-pin-badge" title="Pinned">📌</span>` : ""}
-        ${n.label ? `<span class="note-label-dot" style="background:var(--label-${n.label})"></span>` : ""}
+        ${LABELS.has(n.label) ? `<span class="note-label-dot" style="background:var(--label-${n.label})"></span>` : ""}
         ${topLineHtml}
-        <h3>${n.title}</h3>
+        <h3>${escapeHtml(n.title)}</h3>
         <div class="note-dates">
           <span>Created ${formatDate(n.created)}</span>
           ${n.due ? `<span class="due${isOverdue(n.due) ? " overdue" : ""}">Due ${formatDate(n.due)}</span>` : ""}
         </div>
-        ${n.image ? `<img class="note-image" src="${n.image}" alt="">` : ""}
-        <div class="note-body">${n.body}</div>
+        ${n.image ? `<img class="note-image" src="${safeImageUrl(n.image)}" alt="">` : ""}
+        <div class="note-body">${sanitizeHtml(n.body)}</div>
         <div class="note-meta">
-          ${(n.tags || []).map(t => `<span class="tag">#${t}</span>`).join("")}
+          ${(n.tags || []).map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join("")}
         </div>
       </div>
     `;
@@ -1584,9 +1631,9 @@
         <div class="folder-shape" style="--tab-color:${resolveFolderColor(f)};">
           <div class="folder-tab"></div>
           <div class="folder-body"></div>
-          ${f.image ? `<div class="folder-photo"><div class="folder-photo-border"></div><div class="folder-photo-img" style="background-image:url('${f.image}');"></div></div>` : ""}
+          ${f.image ? `<div class="folder-photo"><div class="folder-photo-border"></div><div class="folder-photo-img" style="background-image:url('${safeImageUrl(f.image)}');"></div></div>` : ""}
         </div>
-        <div class="name">${f.name}</div>
+        <div class="name">${escapeHtml(f.name)}</div>
         <div class="count">${countLabel}</div>
       </div>
     `;
@@ -1644,8 +1691,8 @@
   function trashItemHtml(n) {
     return `
       <div class="note trash-row" data-id="${n.id}">
-        <h3>${n.title}</h3>
-        <div class="note-body">${n.body}</div>
+        <h3>${escapeHtml(n.title)}</h3>
+        <div class="note-body">${sanitizeHtml(n.body)}</div>
         <div class="trash-actions">
           <button class="btn-secondary trash-restore" data-id="${n.id}" style="margin-left:0;">Restore</button>
           <button class="btn-danger trash-delete-forever" data-id="${n.id}" style="margin-left:0;margin-right:0;">Delete forever</button>
@@ -1789,7 +1836,7 @@
       const breadcrumbHtml = `<div class="folder-back" id="folder-breadcrumb">` +
         crumbs.map((c, i) => {
           const isLast = i === crumbs.length - 1;
-          return `<span class="crumb${isLast ? "" : " crumb-link"}" data-depth="${i}">${c.name}</span>`;
+          return `<span class="crumb${isLast ? "" : " crumb-link"}" data-depth="${i}">${escapeHtml(c.name)}</span>`;
         }).join(" › ") +
         `</div>`;
       const actionsHtml = `<div class="folder-actions">` +
@@ -1863,7 +1910,7 @@
         const groupNotes = filtered.filter(n => (n.folderId || "unfiled") === gid);
         return `
           <div class="folder-group">
-            <h4>${label}</h4>
+            <h4>${escapeHtml(label)}</h4>
             <div class="notes-inner">${groupNotes.map(noteCardHtml).join("")}</div>
           </div>
         `;
@@ -1973,7 +2020,7 @@
     const select = document.getElementById("modal-folder");
     const opts = [`<option value="">Unfiled</option>`]
       .concat(folderTreeFlat().map(({ folder: f, depth }) =>
-        `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${f.name}</option>`
+        `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${escapeHtml(f.name)}</option>`
       ));
     select.innerHTML = opts.join("");
     select.value = selectedId || "";
@@ -1982,7 +2029,7 @@
   function openModal(note) {
     editingNoteId = note ? note.id : null;
     document.getElementById("modal-title").value = note ? note.title : "";
-    modalBody.innerHTML = note ? note.body : "";
+    modalBody.innerHTML = note ? sanitizeHtml(note.body) : "";
     const defaultFolder = (currentFolder !== "all" && currentFolder !== "unfiled") ? currentFolder : "";
     renderFolderSelectOptions(note ? (note.folderId || "") : defaultFolder);
     document.getElementById("modal-due").value = note ? (note.due || "") : "";
@@ -2010,7 +2057,7 @@
   function renderNoteImagePreview(image) {
     const preview = document.getElementById("note-image-preview");
     preview.innerHTML = image
-      ? `<img src="${image}" style="width:100%;max-height:140px;object-fit:cover;border-radius:4px;">`
+      ? `<img src="${safeImageUrl(image)}" style="width:100%;max-height:140px;object-fit:cover;border-radius:4px;">`
       : `<span class="field-label" style="margin:0">No image attached</span>`;
   }
 
@@ -2092,7 +2139,7 @@
 
     const payload = {
       title,
-      body: modalBody.innerHTML,
+      body: sanitizeHtml(modalBody.innerHTML),
       folderId,
       tags,
       label: selectedLabel,
@@ -2163,7 +2210,7 @@
       if (!transcript) return;
       openModal(null);
       document.getElementById("modal-title").value = transcript.split(" ").slice(0, 8).join(" ");
-      modalBody.innerHTML = `<p>${transcript}</p>`;
+      modalBody.innerHTML = `<p>${escapeHtml(transcript)}</p>`;
     });
 
     recognition.addEventListener("end", () => { listening = false; micBtn.style.background = ""; });
@@ -2194,7 +2241,7 @@
     const opts = [`<option value="">No parent (top-level)</option>`].concat(
       folderTreeFlat()
         .filter(({ folder: f }) => !excludeIds.includes(f.id))
-        .map(({ folder: f, depth }) => `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${f.name}</option>`)
+        .map(({ folder: f, depth }) => `<option value="${f.id}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${escapeHtml(f.name)}</option>`)
     );
     parentSelect.innerHTML = opts.join("");
     parentSelect.value = currentParent || "";
@@ -2230,7 +2277,7 @@
   function renderFolderImagePreview(image) {
     const preview = document.getElementById("folder-image-preview");
     preview.innerHTML = image
-      ? `<img src="${image}" style="width:60px;height:45px;object-fit:cover;border-radius:4px;">`
+      ? `<img src="${safeImageUrl(image)}" style="width:60px;height:45px;object-fit:cover;border-radius:4px;">`
       : `<span class="field-label" style="margin:0">No image set — solid colour will be used</span>`;
   }
 
@@ -2460,9 +2507,9 @@
     const listEl = document.getElementById("admin-people-list");
     listEl.innerHTML = people.map(u => `
       <div class="admin-row">
-        <span class="email">${u.email}${u.email === currentUser.email ? " (you)" : ""}</span>
-        <label><input type="checkbox" class="admin-toggle" data-email="${u.email}" ${u.isAdmin ? "checked" : ""}> admin</label>
-        <button class="btn-secondary admin-remove" data-email="${u.email}">Remove</button>
+        <span class="email">${escapeHtml(u.email)}${u.email === currentUser.email ? " (you)" : ""}</span>
+        <label><input type="checkbox" class="admin-toggle" data-email="${escapeHtml(u.email)}" ${u.isAdmin ? "checked" : ""}> admin</label>
+        <button class="btn-secondary admin-remove" data-email="${escapeHtml(u.email)}">Remove</button>
       </div>
     `).join("");
 
@@ -2486,7 +2533,7 @@
 
     const viewAsSelect = document.getElementById("admin-view-as");
     viewAsSelect.innerHTML = people.map(u =>
-      `<option value="${u.email}"${u.email === activeOwner ? " selected" : ""}>${u.email}${u.email === currentUser.email ? " (me)" : ""}</option>`
+      `<option value="${escapeHtml(u.email)}"${u.email === activeOwner ? " selected" : ""}>${escapeHtml(u.email)}${u.email === currentUser.email ? " (me)" : ""}</option>`
     ).join("");
   }
 
