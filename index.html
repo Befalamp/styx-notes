@@ -200,6 +200,50 @@
   @keyframes dictation-pulse { 50% { opacity: 0.3; } }
   .btn-mic.listening, #modal-mic-btn.listening { background: var(--label-red); color: #fff; }
 
+  .select-bar {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: calc(100vw - 24px);
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18);
+    font-size: 13px;
+  }
+  .select-bar[hidden] { display: none; }
+  #notes-container.selecting { padding-bottom: 80px; }
+  .select-bar button { padding: 7px 12px; font-size: 13px; margin: 0; }
+  .select-bar #select-count { font-weight: 600; margin-right: 4px; }
+  .selecting .note { user-select: none; -webkit-user-select: none; }
+  .selecting .note-pin-badge, .selecting .note-label-dot { display: none; }
+  .selecting .note h3, .selecting .note-folder-top { padding-right: 26px; }
+  .selecting .note::after {
+    content: "";
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--ink-soft);
+    background: var(--surface);
+  }
+  .selecting .note.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .selecting .note.selected::after {
+    border-color: var(--accent);
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3L15 7' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat;
+  }
+  #select-btn.active { background: var(--accent); color: #fff; }
+
   .btn-mic {
     border: 1px solid var(--line);
     background: var(--surface);
@@ -788,8 +832,24 @@
     .search {
       min-width: 0;
       max-width: none;
-      flex: 1 1 auto;
+      flex: 1 1 0;
+      width: 0; /* let it shrink so the round buttons stay on the same row */
     }
+
+    .toolbar { gap: 8px; }
+
+    .select-bar {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      transform: none;
+      max-width: none;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 8px;
+    }
+    .select-bar button { padding: 8px 10px; }
 
     .layout-toggle {
       flex: 1 1 100%;
@@ -865,6 +925,13 @@
 </div>
 
 <div class="app" style="display:none;">
+<div class="select-bar" id="select-bar" hidden>
+  <button class="btn-secondary" id="select-done" title="Stop selecting">✕</button>
+  <span id="select-count">0 selected</span>
+  <button class="btn-secondary" id="select-move">Move</button>
+  <button class="btn-secondary" id="select-archive">Archive</button>
+  <button class="btn-danger" id="select-delete">Delete</button>
+</div>
 <script>
   // Signed in last time? Show the app straight away instead of the sign-in
   // screen while Firebase loads; the auth check below still confirms it.
@@ -908,6 +975,7 @@
       <input class="search" id="search" type="text" placeholder="Search notes">
       <button class="btn-mic" id="mic-btn" title="Dictate a note">🎤</button>
       <button class="btn-mic" id="reminder-btn" title="Enable due-date reminders">🔔</button>
+      <button class="btn-mic" id="select-btn" title="Select several notes">☑</button>
       <div class="layout-toggle">
         <button data-layout="grid" class="active">Grid</button>
         <button data-layout="list">List</button>
@@ -1696,7 +1764,7 @@
       topLineHtml = `<div class="note-folder-top">${folderIconSvg(folderColorForIcon, 12)}<span>${escapeHtml(folderPathLabel(n.folderId))}</span></div>`;
     }
     return `
-      <div class="note" data-id="${n.id}"${styleAttr}>
+      <div class="note${selectedNoteIds.has(n.id) ? " selected" : ""}" data-id="${n.id}"${styleAttr}>
         ${n.pinned ? `<span class="note-pin-badge" title="Pinned">📌</span>` : ""}
         ${LABELS.has(n.label) ? `<span class="note-label-dot" style="background:var(--label-${n.label})"></span>` : ""}
         ${topLineHtml}
@@ -1846,6 +1914,7 @@
     folder: () => document.getElementById("folder-modal-overlay").classList.contains("open"),
     theme: () => document.getElementById("theme-modal-overlay").classList.contains("open"),
     admin: () => document.getElementById("admin-modal-overlay").classList.contains("open"),
+    select: () => selectMode,
     sidebar: () => window.innerWidth <= 720 && !document.querySelector(".app").classList.contains("sidebar-collapsed")
       && document.querySelector(".app").style.display !== "none",
   };
@@ -1855,6 +1924,7 @@
     theme: () => document.getElementById("theme-modal-overlay").classList.remove("open"),
     admin: () => document.getElementById("admin-modal-overlay").classList.remove("open"),
     sidebar: () => document.querySelector(".app").classList.add("sidebar-collapsed"),
+    select: () => setSelectMode(false),
   };
   function syncLayers() {
     Object.keys(LAYERS).forEach(id => {
@@ -1880,6 +1950,7 @@
   ["modal-overlay", "folder-modal-overlay", "theme-modal-overlay", "admin-modal-overlay"].forEach(id =>
     layerObserver.observe(document.getElementById(id), { attributes: true, attributeFilter: ["class"] }));
   layerObserver.observe(document.querySelector(".app"), { attributes: true, attributeFilter: ["class", "style"] });
+  layerObserver.observe(document.getElementById("notes-container"), { attributes: true, attributeFilter: ["class"] });
 
   async function closeTopLayerFromBack() {
     const id = layerStack[layerStack.length - 1];
@@ -1913,6 +1984,7 @@
 
   function renderNotes() {
     renderNotesView();
+    document.getElementById("notes-container").classList.toggle("selecting", selectMode);
     recordView();
   }
 
@@ -2100,9 +2172,120 @@
     if (e.target.closest("input[type='checkbox']")) return; // handled by the 'change' listener below
     const card = e.target.closest(".note[data-id]");
     if (!card) return;
+    if (suppressNextClick) { suppressNextClick = false; return; }
+    if (selectMode) { toggleSelected(card.dataset.id); return; }
     const note = notes.find(n => n.id === card.dataset.id);
     if (note) openModal(note);
   });
+
+  // ============================================================
+  // SELECT SEVERAL NOTES — ☑ in the toolbar, or press and hold a note
+  // ============================================================
+  let selectMode = false;
+  const selectedNoteIds = new Set();
+  let suppressNextClick = false;
+
+  function setSelectMode(on) {
+    selectMode = on;
+    if (!on) selectedNoteIds.clear();
+    document.getElementById("notes-container").classList.toggle("selecting", on);
+    document.getElementById("select-btn").classList.toggle("active", on);
+    updateSelectBar();
+    renderNotes();
+  }
+  function toggleSelected(id) {
+    if (selectedNoteIds.has(id)) selectedNoteIds.delete(id); else selectedNoteIds.add(id);
+    document.querySelectorAll(`#notes-container .note[data-id="${CSS.escape(id)}"]`)
+      .forEach(el => el.classList.toggle("selected", selectedNoteIds.has(id)));
+    updateSelectBar();
+  }
+  function updateSelectBar() {
+    document.getElementById("select-bar").hidden = !selectMode;
+    document.getElementById("select-count").textContent = `${selectedNoteIds.size} selected`;
+    document.getElementById("select-archive").textContent = currentFolder === "archive" ? "Unarchive" : "Archive";
+    ["select-move", "select-archive", "select-delete"].forEach(id =>
+      document.getElementById(id).disabled = selectedNoteIds.size === 0);
+  }
+
+  document.getElementById("select-btn").addEventListener("click", () => setSelectMode(!selectMode));
+  document.getElementById("select-done").addEventListener("click", () => setSelectMode(false));
+
+  // Press and hold a note (phones) starts selecting with that note ticked.
+  let holdTimer = null, holdStart = null;
+  const notesContainerEl = document.getElementById("notes-container");
+  notesContainerEl.addEventListener("pointerdown", (e) => {
+    suppressNextClick = false; // a new touch — any click swallowed after a hold belonged to the last one
+    const card = e.target.closest(".note[data-id]");
+    if (!card || card.closest(".trash-row") || e.target.closest("input, a")) return;
+    holdStart = { x: e.clientX, y: e.clientY };
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      suppressNextClick = true;
+      if (!selectMode) setSelectMode(true);
+      toggleSelected(card.dataset.id);
+      if (navigator.vibrate) navigator.vibrate(15);
+    }, 500);
+  });
+  const cancelHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+  notesContainerEl.addEventListener("pointermove", (e) => {
+    if (holdStart && Math.hypot(e.clientX - holdStart.x, e.clientY - holdStart.y) > 10) cancelHold();
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(t => notesContainerEl.addEventListener(t, cancelHold));
+  notesContainerEl.addEventListener("contextmenu", (e) => { if (e.target.closest(".selecting .note, .note[data-id]") && (holdTimer || suppressNextClick)) e.preventDefault(); });
+
+  async function updateSelected(changes, failMsg) {
+    const ids = [...selectedNoteIds];
+    try {
+      await Promise.all(ids.map(id => updateDoc(doc(db, "notes", id), changes)));
+      setSelectMode(false);
+    } catch (err) {
+      showAlert(failMsg + " — " + err.message);
+    }
+  }
+
+  document.getElementById("select-archive").addEventListener("click", () => {
+    const unarchive = currentFolder === "archive";
+    updateSelected({ archived: !unarchive }, unarchive ? "Couldn't unarchive those notes" : "Couldn't archive those notes");
+  });
+  document.getElementById("select-delete").addEventListener("click", async () => {
+    if (!(await showConfirm(`Move ${plural(selectedNoteIds.size, "note")} to the trash?`))) return;
+    updateSelected({ trashed: true, trashedAt: new Date().toISOString() }, "Couldn't delete those notes");
+  });
+  document.getElementById("select-move").addEventListener("click", async () => {
+    const target = await pickFolder(`Move ${plural(selectedNoteIds.size, "note")} to…`);
+    if (target === null) return;
+    updateSelected({ folderId: target || null }, "Couldn't move those notes");
+  });
+
+  // Small dialog with a folder dropdown. Resolves to a folder id, "" for
+  // Unfiled, or null if cancelled.
+  function pickFolder(title) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay open";
+      overlay.innerHTML = `
+        <div class="modal" style="width:380px;">
+          <p class="dialog-title">${escapeHtml(title)}</p>
+          <select id="pick-folder-select" style="width:100%;margin-bottom:18px;">
+            <option value="">Unfiled</option>
+            ${folderTreeFlat().map(({ folder: f, depth }) =>
+              `<option value="${escapeHtml(f.id)}">${"\u2003".repeat(depth)}${depth > 0 ? "↳ " : ""}${escapeHtml(f.name)}</option>`).join("")}
+          </select>
+          <div class="modal-actions">
+            <button class="btn-secondary" data-v="cancel" style="margin:0">Cancel</button>
+            <button class="btn-primary" data-v="ok" style="margin:0">Move</button>
+          </div>
+        </div>`;
+      overlay.addEventListener("click", (e) => {
+        const v = e.target.dataset && e.target.dataset.v;
+        if (!v && e.target !== overlay) return;
+        const value = v === "ok" ? overlay.querySelector("select").value : null;
+        overlay.remove();
+        resolve(value);
+      });
+      document.body.appendChild(overlay);
+    });
+  }
 
   // Checklist ticks persist by re-serialising the note's stored HTML
   // with the matching checkbox's checked state flipped.
