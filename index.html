@@ -419,6 +419,14 @@
     overflow: hidden;
   }
 
+  /* Checklists show in full so every item can be ticked from the card */
+  .note-body.has-checklist {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: none;
+    overflow: visible;
+  }
+
   .note-body h3, .note-body-editable h3 {
     font-size: 14px;
     font-weight: 700;
@@ -1185,6 +1193,10 @@
     return /^(https:|data:image\/)/i.test(u) ? escapeHtml(u).replace(/\(/g, "%28").replace(/\)/g, "%29") : "";
   }
 
+  function plural(count, word) {
+    return `${count} ${word}${count === 1 ? "" : "s"}`;
+  }
+
   const LABELS = new Set(["red", "amber", "green", "blue", "purple"]);
 
 
@@ -1611,7 +1623,7 @@
           ${n.due ? `<span class="due${isOverdue(n.due) ? " overdue" : ""}">Due ${formatDate(n.due)}</span>` : ""}
         </div>
         ${n.image ? `<img class="note-image" src="${safeImageUrl(n.image)}" alt="">` : ""}
-        <div class="note-body">${sanitizeHtml(n.body)}</div>
+        <div class="note-body${/checklist-item/.test(n.body || "") ? " has-checklist" : ""}">${sanitizeHtml(n.body)}</div>
         <div class="note-meta">
           ${(n.tags || []).map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join("")}
         </div>
@@ -1623,8 +1635,8 @@
     const directNoteCount = activeNotes().filter(n => n.folderId === f.id).length;
     const subCount = folderChildren(f.id).length;
     const countLabel = subCount > 0
-      ? `${directNoteCount} notes, ${subCount} subfolder${subCount === 1 ? "" : "s"}`
-      : `${directNoteCount} notes`;
+      ? `${plural(directNoteCount, "note")}, ${plural(subCount, "subfolder")}`
+      : plural(directNoteCount, "note");
     return `
       <div class="folder-icon-card" data-folder="${f.id}">
         <button class="folder-edit-btn" data-folder-id="${f.id}" title="Customise folder">✎</button>
@@ -1650,7 +1662,7 @@
           <div class="folder-body"></div>
         </div>
         <div class="name">Unfiled</div>
-        <div class="count">${count} notes</div>
+        <div class="count">${plural(count, "note")}</div>
       </div>
     `;
   }
@@ -1771,7 +1783,7 @@
       container.innerHTML = emptyBtn + `<div class="notes">${trashed.map(trashItemHtml).join("")}</div>`;
       bindTrashActions(container);
       document.getElementById("empty-trash-btn").addEventListener("click", async () => {
-        if (!(await showConfirm(`Permanently delete all ${trashed.length} note(s) in trash? This can't be undone.`))) return;
+        if (!(await showConfirm(`Permanently delete all ${plural(trashed.length, "note")} in trash? This can't be undone.`))) return;
         try {
           await Promise.all(trashed.map(n => deleteDoc(doc(db, "notes", n.id))));
         } catch (err) { showAlert("Couldn't empty the trash — " + err.message); }
@@ -2354,7 +2366,7 @@
       const choice = await showDialog({
         title: "Delete folder",
         message:
-          `"${editingFolderDoc.name}"${subMsg} has ${notesAffected.length} note(s) in it.\n\n` +
+          `"${editingFolderDoc.name}"${subMsg} has ${plural(notesAffected.length, "note")} in it.\n\n` +
           `What should happen to those notes?`,
         buttons: [
           { label: "Cancel", value: "cancel", variant: "secondary" },
