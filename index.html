@@ -341,6 +341,18 @@
     margin-bottom: 16px;
   }
 
+  .folder-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: -8px 0 14px;
+  }
+
+  .folder-actions .btn-secondary {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
   .folder-back .crumb-link {
     color: var(--accent);
     cursor: pointer;
@@ -765,6 +777,10 @@
       flex: 1 1 100%;
       margin-left: 0;
       padding: 12px 16px;
+    }
+
+    .folder-actions .btn-secondary {
+      flex: 1;
     }
 
     .notes,
@@ -1600,7 +1616,44 @@
     });
   }
 
+  // ---------- back button ----------
+  // Every view change (layout, folder, drill-down, tag) becomes a history
+  // entry, so the phone's back button steps back through views instead of
+  // closing the app. Hooked into renderNotes, which every view change goes
+  // through; data refreshes re-render the same view and are skipped.
+  let restoringView = false;
+  function viewState() {
+    return { layout: currentLayout, folder: currentFolder, path: [...folderPath], tag: currentTag };
+  }
+  function recordView() {
+    if (restoringView) return;
+    const next = viewState();
+    if (!history.state) { history.replaceState(next, ""); return; }
+    if (JSON.stringify(history.state) === JSON.stringify(next)) return;
+    history.pushState(next, "");
+  }
+  window.addEventListener("popstate", (e) => {
+    const s = e.state;
+    if (!s) return;
+    currentLayout = s.layout;
+    currentFolder = s.folder;
+    folderPath = s.path;
+    currentTag = s.tag;
+    document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === currentLayout));
+    localStorage.setItem("lastLayout", currentLayout);
+    restoringView = true;
+    renderFolderSidebar();
+    renderTags();
+    renderNotes();
+    restoringView = false;
+  });
+
   function renderNotes() {
+    renderNotesView();
+    recordView();
+  }
+
+  function renderNotesView() {
     const container = document.getElementById("notes-container");
 
     if (currentFolder === "trash") {
@@ -1681,8 +1734,10 @@
           const isLast = i === crumbs.length - 1;
           return `<span class="crumb${isLast ? "" : " crumb-link"}" data-depth="${i}">${c.name}</span>`;
         }).join(" › ") +
-        ` <span class="crumb-link" id="new-subfolder-link" style="margin-left:8px;">+ New subfolder</span>` +
-        ` <span class="crumb-link" id="edit-folder-link" style="margin-left:8px;">✎ Edit folder</span>` +
+        `</div>`;
+      const actionsHtml = `<div class="folder-actions">` +
+        `<button class="btn-secondary" id="new-subfolder-link">+ New subfolder</button>` +
+        `<button class="btn-secondary" id="edit-folder-link">✎ Edit folder</button>` +
         `</div>`;
 
       const subfolders = folderChildren(activeId);
@@ -1699,7 +1754,7 @@
         bodyHtml = `<div class="empty-state">Nothing filed here yet.</div>`;
       }
 
-      container.innerHTML = breadcrumbHtml + bodyHtml;
+      container.innerHTML = actionsHtml + breadcrumbHtml + bodyHtml;
       bindFolderIconCards(container);
       container.querySelectorAll(".crumb-link[data-depth]").forEach(el => {
         el.addEventListener("click", () => {
