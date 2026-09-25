@@ -256,10 +256,23 @@
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s ease;
+    z-index: 2; /* above the folder image layers */
   }
 
   .folder-icon-card:hover .folder-edit-btn {
     opacity: 1;
+  }
+
+  /* Touch screens have no hover, so keep it visible and easier to tap */
+  @media (hover: none) {
+    .folder-edit-btn {
+      opacity: 1;
+      width: 30px;
+      height: 30px;
+      font-size: 14px;
+      top: 2px;
+      right: 2px;
+    }
   }
 
   /* ---- folder icon graphic ----
