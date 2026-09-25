@@ -882,6 +882,7 @@
     <h1>Styx Notes</h1>
     <button class="btn-secondary" id="theme-btn" style="width:100%;margin-bottom:8px;">🎨 Theme</button>
     <button class="btn-secondary" id="admin-btn" style="width:100%;margin-bottom:8px;display:none;">⚙ Manage people</button>
+    <button class="btn-secondary" id="export-btn" style="width:100%;margin-bottom:8px;">⬇ Export / backup</button>
     <button class="btn-secondary" id="sign-out-btn" style="width:100%;margin-bottom:16px;">Sign out</button>
 
     <div class="sidebar-section">
@@ -2471,6 +2472,97 @@
     micBtn.title = "Voice capture not supported in this browser";
     modalMicBtn.style.display = "none";
   }
+
+  // ============================================================
+  // EXPORT / BACKUP
+  // ============================================================
+  function downloadFile(filename, content, type) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Rich note body -> plain Markdown-ish text for the readable copy.
+  function htmlToMarkdown(html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = sanitizeHtml(html);
+    const walk = (node) => [...node.childNodes].map(n => {
+      if (n.nodeType === Node.TEXT_NODE) return n.textContent;
+      if (n.nodeType !== Node.ELEMENT_NODE) return "";
+      const inner = walk(n);
+      switch (n.tagName) {
+        case "B": case "STRONG": return `**${inner}**`;
+        case "I": case "EM": return `*${inner}*`;
+        case "H1": case "H2": case "H3": case "H4": return `\n### ${inner.trim()}\n`;
+        case "LI": return `\n- ${inner.trim()}`;
+        case "UL": case "OL": return `${inner}\n`;
+        case "A": return n.getAttribute("href") ? `[${inner}](${n.getAttribute("href")})` : inner;
+        case "BR": return "\n";
+        case "INPUT": return n.hasAttribute("checked") ? "[x] " : "[ ] ";
+        case "IMG": return "";
+        case "DIV":
+          return n.classList.contains("checklist-item") ? `\n- ${inner.trim()}` : `\n${inner}`;
+        case "P": return `\n${inner}\n`;
+        default: return inner;
+      }
+    }).join("");
+    return walk(tpl.content).replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function exportMarkdown() {
+    const stamp = new Date().toLocaleString("en-GB");
+    const byFolder = new Map();
+    notes.forEach(n => {
+      const key = n.trashed ? "Trash" : n.archived ? "Archive" : folderPathLabel(n.folderId);
+      if (!byFolder.has(key)) byFolder.set(key, []);
+      byFolder.get(key).push(n);
+    });
+    const keys = [...byFolder.keys()].sort((a, b) =>
+      (["Trash", "Archive"].includes(a) - ["Trash", "Archive"].includes(b)) || a.localeCompare(b));
+    let out = `# Styx Notes export\n\nExported ${stamp} — ${plural(notes.length, "note")}.\n`;
+    keys.forEach(key => {
+      out += `\n\n## ${key}\n`;
+      byFolder.get(key).forEach(n => {
+        out += `\n### ${n.title || "(untitled)"}\n\n`;
+        const meta = [];
+        if (n.created) meta.push(`Created ${formatDate(n.created)}`);
+        if (n.due) meta.push(`Due ${formatDate(n.due)}`);
+        if (n.tags && n.tags.length) meta.push(n.tags.map(t => "#" + t).join(" "));
+        if (n.pinned) meta.push("Pinned");
+        if (n.image) meta.push("Has an image (in the .json backup)");
+        if (meta.length) out += `_${meta.join(" · ")}_\n\n`;
+        out += htmlToMarkdown(n.body || "") + "\n";
+      });
+    });
+    return out;
+  }
+
+  document.getElementById("export-btn").addEventListener("click", async () => {
+    const choice = await showDialog({
+      title: "Export / backup",
+      message: `Download a copy of all ${plural(notes.length, "note")} and ${plural(folders.length, "folder")}, including archived and trashed notes.\n\n` +
+        `Backup file (.json): everything, including images — keep this one safe.\n` +
+        `Readable copy (.md): plain text you can open in any notes or text app.`,
+      buttons: [
+        { label: "Cancel", value: null, variant: "secondary" },
+        { label: "Readable copy", value: "md", variant: "secondary" },
+        { label: "Backup file", value: "json", variant: "primary" },
+      ],
+    });
+    if (!choice) return;
+    const date = new Date().toISOString().slice(0, 10);
+    if (choice === "json") {
+      const data = { app: "styx-notes", version: 1, exportedAt: new Date().toISOString(), owner: activeOwner, folders, notes };
+      downloadFile(`styx-notes-backup-${date}.json`, JSON.stringify(data, null, 2), "application/json");
+    } else {
+      downloadFile(`styx-notes-${date}.md`, exportMarkdown(), "text/markdown");
+    }
+  });
 
   // ============================================================
   // FOLDER MODAL (create / rename / recolour / delete)
