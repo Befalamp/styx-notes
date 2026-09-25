@@ -24,12 +24,12 @@
     --accent: #2f5d50;
     --radius: 6px;
     --label-red: #d9534f;
-    --label-amber: #d9a63f;
+    --label-amber: #26a3b0; /* key kept as "amber" for saved notes; now teal */
     --label-green: #4f8a5b;
     --label-blue: #3f6fa6;
     --label-purple: #7a5c9e;
     --tint-red: #f7e4e2;
-    --tint-amber: #f7ecd9;
+    --tint-amber: #d7eef1;
     --tint-green: #e6efe3;
     --tint-blue: #e3ebf2;
     --tint-purple: #ece5f0;
@@ -262,106 +262,55 @@
     opacity: 1;
   }
 
-  /* ---- folder icon graphic ---- */
+  /* ---- folder icon graphic ----
+     Built from icons/folder-*.png: the yellow folder on top, the tab
+     underneath coloured via --tab-color (the tab PNG supplies the shape as
+     a mask and its shading, where mid-grey = the exact colour). */
   .folder-shape {
     position: relative;
     width: 110px;
-    height: 90px;
+    height: 101px;
     margin: 0 auto 10px;
     transition: transform 0.15s ease;
   }
 
-  .styx-folder {
+  .folder-shape > div,
+  .folder-photo > div {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 220px;
-    height: 180px;
-    transform: scale(0.5);
-    transform-origin: top left;
+    inset: 0;
   }
 
-  /* Back of folder */
-  .styx-folder::before {
-    content: "";
-    position: absolute;
-    left: 12px;
-    top: 42px;
-    width: 198px;
-    height: 130px;
-    background: linear-gradient(145deg, #f7ae18 0%, #e89809 55%, #c97800 100%);
-    border-radius: 24px 26px 30px 28px;
-    box-shadow:
-      inset 4px 4px 4px rgba(255,255,255,.25),
-      inset -5px -5px 8px rgba(150,85,0,.18),
-      0 8px 15px rgba(60,40,0,.18);
-    transform: rotate(-1deg);
+  .folder-tab {
+    background: url(icons/folder-tab.png) center / contain no-repeat, var(--tab-color);
+    background-blend-mode: hard-light;
+    -webkit-mask: url(icons/folder-tab.png) center / contain no-repeat;
+    mask: url(icons/folder-tab.png) center / contain no-repeat;
   }
 
-  /* Single coloured tab */
-  .styx-folder::after {
-    content: "";
-    position: absolute;
-    left: 40px;
-    top: 12px;
-    width: 92px;
-    height: 74px;
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--tab-color), white 15%) 0%,
-      var(--tab-color) 60%,
-      color-mix(in srgb, var(--tab-color), black 12%) 100%
-    );
-    border-radius: 28px 28px 16px 12px;
-    box-shadow:
-      inset 3px 3px 4px rgba(255,255,255,.22),
-      0 4px 8px rgba(0,0,0,.12);
-    z-index: 2;
+  .folder-body {
+    background: url(icons/folder-body.png) center / contain no-repeat;
   }
 
-  /* Front face */
-  .styx-folder__front {
-    position: absolute;
-    left: 24px;
-    top: 58px;
-    width: 188px;
-    height: 118px;
-    z-index: 3;
-    background: linear-gradient(145deg, #ffd65c 0%, #ffc032 32%, #f5ad16 75%, #eda00e 100%);
-    background-size: cover;
-    background-position: center;
-    border-radius: 24px 22px 32px 30px;
-    box-shadow:
-      inset 4px 4px 5px rgba(255,255,255,.35),
-      inset -4px -5px 7px rgba(180,105,0,.1),
-      0 7px 14px rgba(80,45,0,.18);
-    transform: rotate(-1deg);
-  }
-
-  .folder-icon-card:hover .styx-folder__front {
+  .folder-icon-card:hover .folder-body {
     filter: brightness(0.97);
   }
 
-  /* Highlight along top edge */
-  .styx-folder__front::before {
-    content: "";
-    position: absolute;
-    left: 14px;
-    right: 12px;
-    top: 5px;
-    height: 4px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(255,255,255,.65), rgba(255,255,255,.15));
+  /* Optional folder picture, shaped to the front face with a white border */
+  .folder-photo {
+    filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.28));
   }
 
-  /* Very subtle lower shading */
-  .styx-folder__front::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: radial-gradient(ellipse at 75% 80%, rgba(205,120,0,.12), transparent 55%);
-    pointer-events: none;
+  .folder-photo-border {
+    background: #fff;
+    -webkit-mask: url(icons/folder-photo-border.png) center / contain no-repeat;
+    mask: url(icons/folder-photo-border.png) center / contain no-repeat;
+  }
+
+  .folder-photo-img {
+    background-size: cover;
+    background-position: center;
+    -webkit-mask: url(icons/folder-photo-mask.png) center / contain no-repeat;
+    mask: url(icons/folder-photo-mask.png) center / contain no-repeat;
   }
 
   .folder-icon-card .name {
@@ -414,11 +363,17 @@
     margin-top: 10px;
   }
 
-  .note.label-red { border-left-color: var(--label-red); background: var(--tint-red); }
-  .note.label-amber { border-left-color: var(--label-amber); background: var(--tint-amber); }
-  .note.label-green { border-left-color: var(--label-green); background: var(--tint-green); }
-  .note.label-blue { border-left-color: var(--label-blue); background: var(--tint-blue); }
-  .note.label-purple { border-left-color: var(--label-purple); background: var(--tint-purple); }
+  /* Labels show as a dot so the card colour always follows its folder */
+  .note-label-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--surface);
+  }
+  .note-pin-badge ~ .note-label-dot { right: 30px; top: 12px; }
 
   .note h3 {
     margin: 0 0 6px;
@@ -1115,7 +1070,14 @@
   let currentLayout = "grid";
   let folderPath = []; // stack of folder ids drilled into, in the "folders" layout — [] means at the root
 
-  const folderColorPalette = ["#4f8a5b", "#3f6fa6", "#7a5c9e", "#d9a63f", "#d9534f", "#2f5d50", "#6b6b6b"];
+  const folderColorPalette = ["#4f8a5b", "#3f6fa6", "#7a5c9e", "#26a3b0", "#d9534f", "#2f5d50", "#6b6b6b"];
+  // Amber was retired for teal (it vanished against the yellow folder image);
+  // folders saved with it show teal.
+  const LEGACY_FOLDER_COLORS = { "#d9a63f": "#26a3b0" };
+  function storedFolderColor(folder) {
+    const c = folder && folder.color;
+    return c ? (LEGACY_FOLDER_COLORS[c.toLowerCase()] || c) : null;
+  }
 
   let searchQuery = "";
   let notifiedDueIds = new Set(); // this-session only, so reminders don't repeat every render
@@ -1179,7 +1141,7 @@
       if (!parent) break;
       current = parent;
     }
-    return (current && current.color) ? current.color : folderColorPalette[0];
+    return storedFolderColor(current) || folderColorPalette[0];
   }
 
   // Only top-level folders store a real colour choice. Every level below
@@ -1188,7 +1150,7 @@
   function resolveFolderColor(folder) {
     if (!folder) return folderColorPalette[0];
     const depth = folderDepth(folder);
-    if (depth === 0) return folder.color || folderColorPalette[0];
+    if (depth === 0) return storedFolderColor(folder) || folderColorPalette[0];
     const root = folderRootColor(folder);
     const delta = Math.min(depth * 15, 45);
     return shiftLightness(root, delta);
@@ -1499,7 +1461,6 @@
   }
 
   function noteCardHtml(n) {
-    let labelClass = "";
     let styleAttr = "";
     let topLineHtml = "";
     let folderColorForIcon = null;
@@ -1507,17 +1468,16 @@
       const folder = folders.find(f => f.id === n.folderId);
       if (folder) folderColorForIcon = resolveFolderColor(folder);
     }
-    if (n.label) {
-      labelClass = " label-" + n.label;
-    } else if (folderColorForIcon) {
+    if (folderColorForIcon) {
       styleAttr = ` style="border-left-color:${folderColorForIcon}; background:${tintFromColor(folderColorForIcon)};"`;
     }
     if (folderColorForIcon) {
       topLineHtml = `<div class="note-folder-top">${folderIconSvg(folderColorForIcon, 12)}<span>${folderPathLabel(n.folderId)}</span></div>`;
     }
     return `
-      <div class="note${labelClass}" data-id="${n.id}"${styleAttr}>
+      <div class="note" data-id="${n.id}"${styleAttr}>
         ${n.pinned ? `<span class="note-pin-badge" title="Pinned">📌</span>` : ""}
+        ${n.label ? `<span class="note-label-dot" style="background:var(--label-${n.label})"></span>` : ""}
         ${topLineHtml}
         <h3>${n.title}</h3>
         <div class="note-dates">
@@ -1534,7 +1494,6 @@
   }
 
   function folderIconCardHtml(f) {
-    const bodyStyle = f.image ? `background-image:url('${f.image}');` : "";
     const directNoteCount = activeNotes().filter(n => n.folderId === f.id).length;
     const subCount = folderChildren(f.id).length;
     const countLabel = subCount > 0
@@ -1543,10 +1502,10 @@
     return `
       <div class="folder-icon-card" data-folder="${f.id}">
         <button class="folder-edit-btn" data-folder-id="${f.id}" title="Customise folder">✎</button>
-        <div class="folder-shape">
-          <div class="styx-folder" style="--tab-color:${resolveFolderColor(f)};">
-            <div class="styx-folder__front" style="${bodyStyle}"></div>
-          </div>
+        <div class="folder-shape" style="--tab-color:${resolveFolderColor(f)};">
+          <div class="folder-tab"></div>
+          <div class="folder-body"></div>
+          ${f.image ? `<div class="folder-photo"><div class="folder-photo-border"></div><div class="folder-photo-img" style="background-image:url('${f.image}');"></div></div>` : ""}
         </div>
         <div class="name">${f.name}</div>
         <div class="count">${countLabel}</div>
@@ -1560,10 +1519,9 @@
     const count = activeNotes().filter(n => !n.folderId).length;
     return `
       <div class="folder-icon-card" data-folder="unfiled">
-        <div class="folder-shape">
-          <div class="styx-folder" style="--tab-color:${folderColorPalette[6]};">
-            <div class="styx-folder__front"></div>
-          </div>
+        <div class="folder-shape" style="--tab-color:${folderColorPalette[6]};">
+          <div class="folder-tab"></div>
+          <div class="folder-body"></div>
         </div>
         <div class="name">Unfiled</div>
         <div class="count">${count} notes</div>
@@ -2118,7 +2076,7 @@
     parentSelect.innerHTML = opts.join("");
     parentSelect.value = currentParent || "";
 
-    renderFolderSwatches(folderDoc && !folderParentId(folderDoc) ? folderDoc.color : folderColorPalette[0]);
+    renderFolderSwatches(folderDoc && !folderParentId(folderDoc) ? storedFolderColor(folderDoc) : folderColorPalette[0]);
     toggleFolderColourSection();
     renderFolderImagePreview(folderDoc ? folderDoc.image : null);
     document.getElementById("folder-delete-btn").style.display = folderDoc ? "inline-block" : "none";
@@ -2269,8 +2227,8 @@
     "#1F1F1F": { name: "Dark Elevation",  surface: "#292929", ink: "#f0f0f0", inkSoft: "#aaaaaa", line: "#383838", accent: "#5fb894", tints: "dark" },
   };
   const TINTS = {
-    light: { red: "#f7e4e2", amber: "#f7ecd9", green: "#e6efe3", blue: "#e3ebf2", purple: "#ece5f0" },
-    dark:  { red: "#3a2320", amber: "#3a301c", green: "#203324", blue: "#1f2c38", purple: "#2c2333" },
+    light: { red: "#f7e4e2", amber: "#d7eef1", green: "#e6efe3", blue: "#e3ebf2", purple: "#ece5f0" },
+    dark:  { red: "#3a2320", amber: "#1a3235", green: "#203324", blue: "#1f2c38", purple: "#2c2333" },
   };
 
   function hexToRgb(hex) {
