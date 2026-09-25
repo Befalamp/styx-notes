@@ -1535,7 +1535,11 @@
 
   function sidebarFolderClick(folderKey) {
   currentFolder = folderKey;
-  folderPath = [];
+  // In the Folders view, open the chosen folder (with its parents in the
+  // breadcrumb) rather than showing the top level.
+  folderPath = (currentLayout === "folders" && folders.some(f => f.id === folderKey))
+    ? folderAncestors(folderKey).map(f => f.id).concat([folderKey])
+    : [];
   if ((folderKey === "all" || folderKey === "unfiled" || folderKey === "trash") && currentLayout === "folders") {
     currentLayout = "grid";
     document.querySelectorAll(".layout-toggle button").forEach(b => b.classList.toggle("active", b.dataset.layout === "grid"));
@@ -1740,14 +1744,79 @@
   function viewState() {
     return { layout: currentLayout, folder: currentFolder, path: [...folderPath], tag: currentTag };
   }
+  function sameView(a, b) {
+    return !!a && !!b && a.layout === b.layout && a.folder === b.folder && a.tag === b.tag &&
+      JSON.stringify(a.path) === JSON.stringify(b.path);
+  }
   function recordView() {
     if (restoringView) return;
     const next = viewState();
     if (!history.state) { history.replaceState(next, ""); return; }
-    if (JSON.stringify(history.state) === JSON.stringify(next)) return;
+    if (sameView(history.state, next)) return;
     history.pushState(next, "");
   }
+
+  // Open windows (note editor, folder/theme/admin settings, and the sidebar
+  // drawer on phones) also get a history entry, so back closes the window
+  // rather than leaving the view behind it. Watching their "open" state
+  // covers every way they open and close without touching each handler.
+  const layerStack = [];   // ids of open windows, oldest first
+  let ignorePops = 0;      // pops we caused ourselves when a window closed normally
+  const LAYERS = {
+    note: () => document.getElementById("modal-overlay").classList.contains("open"),
+    folder: () => document.getElementById("folder-modal-overlay").classList.contains("open"),
+    theme: () => document.getElementById("theme-modal-overlay").classList.contains("open"),
+    admin: () => document.getElementById("admin-modal-overlay").classList.contains("open"),
+    sidebar: () => window.innerWidth <= 720 && !document.querySelector(".app").classList.contains("sidebar-collapsed")
+      && document.querySelector(".app").style.display !== "none",
+  };
+  const CLOSE_LAYER = {
+    note: () => closeModal(),
+    folder: () => document.getElementById("folder-modal-overlay").classList.remove("open"),
+    theme: () => document.getElementById("theme-modal-overlay").classList.remove("open"),
+    admin: () => document.getElementById("admin-modal-overlay").classList.remove("open"),
+    sidebar: () => document.querySelector(".app").classList.add("sidebar-collapsed"),
+  };
+  function syncLayers() {
+    Object.keys(LAYERS).forEach(id => {
+      const open = LAYERS[id]();
+      const tracked = layerStack.includes(id);
+      if (open && !tracked) {
+        layerStack.push(id);
+        history.pushState({ ...viewState(), layer: id }, "");
+      } else if (!open && tracked) {
+        // Closed by a button/backdrop — drop the entry we added for it. If a
+        // view change has already been pushed on top (e.g. picking a folder
+        // closes the sidebar), leave it: popping back to it restores the
+        // previous view, which is what back should do anyway.
+        layerStack.splice(layerStack.indexOf(id), 1);
+        if (history.state && history.state.layer === id) {
+          ignorePops++;
+          history.back();
+        }
+      }
+    });
+  }
+  const layerObserver = new MutationObserver(syncLayers);
+  ["modal-overlay", "folder-modal-overlay", "theme-modal-overlay", "admin-modal-overlay"].forEach(id =>
+    layerObserver.observe(document.getElementById(id), { attributes: true, attributeFilter: ["class"] }));
+  layerObserver.observe(document.querySelector(".app"), { attributes: true, attributeFilter: ["class", "style"] });
+
+  async function closeTopLayerFromBack() {
+    const id = layerStack[layerStack.length - 1];
+    if (id === "note" && noteHasUnsavedChanges()) {
+      // Keep the editor (and its history entry) until they decide.
+      history.pushState({ ...viewState(), layer: id }, "");
+      if (await showConfirm("Discard your unsaved changes to this note?")) closeModal();
+      return;
+    }
+    layerStack.pop();
+    CLOSE_LAYER[id]();
+  }
+
   window.addEventListener("popstate", (e) => {
+    if (ignorePops > 0) { ignorePops--; return; }
+    if (layerStack.length) { closeTopLayerFromBack(); return; }
     const s = e.state;
     if (!s) return;
     currentLayout = s.layout;
@@ -2059,6 +2128,19 @@
     document.getElementById("modal-save").textContent = note ? "Save changes" : "Save note";
     overlay.classList.add("open");
     document.getElementById("modal-title").focus();
+    noteSnapshot = noteFingerprint();
+  }
+
+  let noteSnapshot = "";
+  function noteFingerprint() {
+    return JSON.stringify([
+      document.getElementById("modal-title").value, modalBody.innerHTML,
+      document.getElementById("modal-folder").value, document.getElementById("modal-due").value,
+      document.getElementById("modal-tags").value, selectedLabel, selectedPinned,
+    ]);
+  }
+  function noteHasUnsavedChanges() {
+    return pendingNoteImage !== undefined || noteFingerprint() !== noteSnapshot;
   }
 
   function closeModal() {
