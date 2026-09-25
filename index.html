@@ -200,6 +200,18 @@
   @keyframes dictation-pulse { 50% { opacity: 0.3; } }
   .btn-mic.listening, #modal-mic-btn.listening { background: var(--label-red); color: #fff; }
 
+  .sync-status {
+    margin: -8px 0 14px;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--tint-amber);
+    color: var(--ink);
+  }
+  .sync-status[hidden] { display: none; }
+  .sync-status.offline { background: var(--line); }
+  .sync-status.saved { background: var(--tint-green); }
+
   .select-bar {
     position: fixed;
     left: 50%;
@@ -984,6 +996,7 @@
       </div>
       <button class="btn-primary" id="new-note-btn">New note</button>
     </div>
+    <div class="sync-status" id="sync-status" hidden></div>
 
     <div class="notes" id="notes-container"></div>
   </main>
@@ -1557,12 +1570,51 @@
     }
   });
 
+  // ---------- offline / syncing indicator ----------
+  // Firestore keeps working offline and queues writes; this bar says so, and
+  // confirms once everything has reached the server.
+  let notesPendingWrites = false;
+  let syncWasPending = false;
+  let syncSavedTimer = null;
+  function updateSyncStatus() {
+    const el = document.getElementById("sync-status");
+    const offline = !navigator.onLine;
+    clearTimeout(syncSavedTimer);
+    el.classList.remove("offline", "saved");
+    if (offline) {
+      el.hidden = false;
+      el.classList.add("offline");
+      el.textContent = notesPendingWrites
+        ? "Offline — your changes are saved on this device and will sync when you're back online."
+        : "Offline — you can keep working; changes will sync when you're back online.";
+      syncWasPending = syncWasPending || notesPendingWrites;
+    } else if (notesPendingWrites) {
+      el.hidden = false;
+      el.textContent = "Saving…";
+      syncWasPending = true;
+    } else if (syncWasPending) {
+      syncWasPending = false;
+      el.hidden = false;
+      el.classList.add("saved");
+      el.textContent = "✓ All changes saved";
+      syncSavedTimer = setTimeout(() => { el.hidden = true; }, 2500);
+    } else {
+      el.hidden = true;
+    }
+  }
+  window.addEventListener("online", updateSyncStatus);
+  window.addEventListener("offline", updateSyncStatus);
+
   function subscribeToData(ownerEmail) {
     if (unsubNotes) unsubNotes();
     if (unsubFolders) unsubFolders();
 
     const notesQuery = query(collection(db, "notes"), where("owner", "==", ownerEmail), orderBy("created", "desc"));
-    unsubNotes = onSnapshot(notesQuery, (snapshot) => {
+    unsubNotes = onSnapshot(notesQuery, { includeMetadataChanges: true }, (snapshot) => {
+      notesPendingWrites = !!(snapshot.metadata && snapshot.metadata.hasPendingWrites);
+      updateSyncStatus();
+      // Metadata-only updates (e.g. "saved to server") change nothing visible.
+      if (notesLoaded && typeof snapshot.docChanges === "function" && snapshot.docChanges().length === 0) return;
       notes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       notesLoaded = true;
       renderFolderSidebar();
