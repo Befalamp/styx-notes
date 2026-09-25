@@ -1394,6 +1394,36 @@
     history.replaceState(history.state, "", location.pathname);
     if (action === "voice") startDictation({ newNote: true });
     else if (action === "new") openModal(null);
+    else if (action === "share") openSharedNote();
+  }
+
+  // Shared from another app: the service worker stashed what was shared
+  // (see sw.js, "share-target") — turn it into a new note to review.
+  async function openSharedNote() {
+    let shared = null, imageBlob = null;
+    try {
+      const cache = await caches.open("styx-share");
+      const meta = await cache.match("shared.json");
+      if (meta) shared = await meta.json();
+      const img = await cache.match("shared-image");
+      if (img) imageBlob = await img.blob();
+      await cache.delete("shared.json");
+      await cache.delete("shared-image");
+    } catch (err) {}
+    if (!shared && !imageBlob) return;
+    shared = shared || {};
+    const text = (shared.text || "").trim();
+    let link = (shared.url || "").trim();
+    // Many apps put the link inside the text instead of the url field.
+    if (!link) { const m = text.match(/https?:\/\/\S+/); if (m) link = m[0]; }
+    const textWithoutLink = link ? text.replace(link, "").trim() : text;
+    openModal(null);
+    document.getElementById("modal-title").value =
+      (shared.title || "").trim() || textWithoutLink.split(/\s+/).slice(0, 8).join(" ") || (link ? new URL(link).hostname : "Shared image");
+    modalBody.innerHTML =
+      (textWithoutLink ? `<p>${escapeHtml(textWithoutLink)}</p>` : "") +
+      (/^https?:/i.test(link) ? `<p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(link)}</a></p>` : "");
+    if (imageBlob) await attachNoteImage(imageBlob);
   }
 
   function showNotAuthorised(email) {
@@ -2197,15 +2227,43 @@
       : `<span class="field-label" style="margin:0">No image attached</span>`;
   }
 
+  // Firestore caps a note at 1MB and phone photos are several MB, so shrink
+  // images to at most 1600px and re-encode as JPEG before attaching them.
+  async function imageFileToDataUrl(file, maxDim = 1600, quality = 0.82) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("That file isn't an image this browser can read."));
+        i.src = url;
+      });
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff"; // transparent PNGs would otherwise turn black as JPEG
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", quality);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function attachNoteImage(file) {
+    try {
+      pendingNoteImage = await imageFileToDataUrl(file);
+      renderNoteImagePreview(pendingNoteImage);
+    } catch (err) {
+      showAlert("Couldn't attach that image — " + err.message);
+    }
+  }
+
   document.getElementById("note-image-input").addEventListener("change", (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingNoteImage = reader.result;
-      renderNoteImagePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
+    if (file) attachNoteImage(file);
   });
 
   document.getElementById("note-image-remove").addEventListener("click", () => {
